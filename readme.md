@@ -1,16 +1,47 @@
+<div align="center">
+
+<img src="https://cdn.simpleicons.org/gnubash/4EAA25" alt="Bash" height="56">
+&nbsp;&nbsp;&nbsp;
+<img src="https://cdn.simpleicons.org/nvidia/76B900" alt="NVIDIA" height="56">
+&nbsp;&nbsp;&nbsp;
+<img src="https://cdn.simpleicons.org/gnometerminal/241F31" alt="Terminal" height="56">
+&nbsp;&nbsp;&nbsp;
+<img src="https://cdn.simpleicons.org/openvpn/EA7E20" alt="OpenVPN" height="56">
+
 # hpc
 
-Command-line helpers for the **UniCal HPC cluster**. A single command, `hpc`, runs on your own machine and drives the cluster over SSH: submit Slurm jobs with sensible presets, watch the queue, sync files and read logs, without opening a portal shell.
+**One command for the UniCal HPC cluster.**<br>
+Submit Slurm jobs with sensible presets, watch the queue, sync files and read logs, straight from your own terminal.
 
-> **Status.** The test suite passes offline (stubs for `ssh` and `rsync`). The tool has not yet been validated against the live cluster; report any discrepancy.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](license)
+[![Shell: Bash](https://img.shields.io/badge/shell-bash%203.2%2B-4EAA25?logo=gnubash&logoColor=white)](bin/hpc)
+[![Scheduler: Slurm](https://img.shields.io/badge/scheduler-Slurm-0B7BB5)](https://slurm.schedmd.com/)
+[![GPU: NVIDIA H200 MIG](https://img.shields.io/badge/GPU-NVIDIA%20H200%20MIG-76B900?logo=nvidia&logoColor=white)](#5-resource-classes)
+[![Access: SSH over VPN](https://img.shields.io/badge/access-SSH%20%2B%20OpenVPN-EA7E20?logo=openvpn&logoColor=white)](#1-prerequisites)
+[![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#1-prerequisites)
+[![Tests: offline suite](https://img.shields.io/badge/tests-offline%20suite-brightgreen)](#10-tests)
+
+</div>
+
+> [!NOTE]
+> The offline test suite passes (stubs for `ssh` and `rsync`). The tool has not yet been validated against the live cluster; please report any discrepancy.
 
 Official reference: [Getting started with the UniCal HPC cluster](https://hpcgate.unical.it:8001/public/status/getting-started.html).
 
----
+## At a glance
+
+|                     |                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------- |
+| **Presets**         | `tiny`, `small`, `medium`, `large` GPU slices and `cpu`, with the cluster's default CPU and RAM |
+| **QoS handling**    | Preemptible `scavenger` by default, protected `gpu_<class>_reserved` with `--booked`            |
+| **File sync**       | `push` / `pull` over `rsync`, honouring `.gitignore`, never deleting                            |
+| **Monitoring**      | `queue`, `logs -f`, `qos`, `cancel`                                                             |
+| **Safe by default** | A wall-clock limit is mandatory; the cluster login stays in a git-ignored `.env`                |
 
 ## Contents
 
 - [hpc](#hpc)
+  - [At a glance](#at-a-glance)
   - [Contents](#contents)
   - [1. Prerequisites](#1-prerequisites)
   - [2. Installation](#2-installation)
@@ -29,37 +60,49 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
   - [9. Troubleshooting](#9-troubleshooting)
   - [10. Tests](#10-tests)
   - [Before you leave](#before-you-leave)
+  - [License](#license)
 
 ---
 
 ## 1. Prerequisites
 
-- A cluster account and the **university OpenVPN** connection, active whenever you run `hpc`.
-- `ssh` access to `hpcgate.unical.it` with your cluster login (key-based login is strongly recommended, otherwise every command asks for the password).
+> [!IMPORTANT]
+> **The university VPN is required.** The cluster head node is reachable only through the university OpenVPN, which must be **active every time you run `hpc`**. The OpenVPN configuration is not part of this repository: **request it through UniTicket**.
+
+- A cluster account and the OpenVPN configuration described above.
+- `ssh` access to `hpcgate.unical.it` with your cluster login, with your public key uploaded ([installation, step 1](#2-installation)); otherwise every command asks for the password.
 - `bash`, `ssh` and `rsync` on your machine (the stock macOS versions are sufficient).
 
 ## 2. Installation
 
 ```bash
-# 1. Make the command available on your PATH (adapt the target directory if needed)
+# 1. Upload your SSH public key to the cluster (once; connect the VPN first).
+#    Create a key if you have none, then copy it; the password is asked only this time.
+ls ~/.ssh/id_ed25519.pub || ssh-keygen -t ed25519
+ssh-copy-id YOUR_LOGIN@hpcgate.unical.it
+ssh YOUR_LOGIN@hpcgate.unical.it hostname     # must print the host name without asking for the password
+
+# 2. Make the command available on your PATH (adapt the target directory if needed)
 ln -s "$PWD/bin/hpc" ~/.local/bin/hpc
 
-# 2. Tell the tool who you are: set your cluster login in the .env file at the repository root
-echo 'HPC_USER=your_cluster_login' > .env
+# 3. Tell the tool who you are: copy the example and set your cluster login
+cp .env.example .env        # then edit it: HPC_USER=your_cluster_login
 ```
+
+If `ssh-copy-id` fails or the password is still requested afterwards, the cluster may not accept keys for your account: report the exact message to cluster support.
 
 `HPC_USER` is mandatory: the command fails immediately if it is set neither in `.env` nor in the environment. A variable already exported in your shell takes precedence over `.env`. The file is located through the symlink, so `hpc` works from any directory, and it is git-ignored (and therefore not pushed to the cluster). The cluster host (`hpcgate.unical.it`) is fixed.
 
 ## 3. Quick start
 
-Run a five-second smoke test on the smallest GPU slice. Run these commands **from the repository root**.
+Connect the VPN, then run a five-second smoke test on the smallest GPU slice **from the repository root**.
 
 ```bash
-hpc qos                                              # 1. check which QoS your account may use
-hpc push                                             # 2. copy this directory to ~/projects/hpc on the cluster
+hpc qos                                                 # 1. check which QoS your account may use
+hpc push                                                # 2. copy this directory to ~/projects/hpc on the cluster
 hpc submit tiny --time 00:05:00 templates/demo.sbatch   # 3. submit; Slurm prints "Submitted batch job N"
-hpc queue                                            # 4. PENDING -> RUNNING -> COMPLETED
-hpc logs                                             # 5. read the output of the latest job
+hpc queue                                               # 4. PENDING -> RUNNING -> COMPLETED
+hpc logs                                                # 5. read the output of the latest job
 ```
 
 The demo prints the job ID, the home directory, the working directory, the compute node (`ainode01` or `ainode02`) and `CUDA_VISIBLE_DEVICES`. For a run without a GPU, replace `tiny` with `cpu`.
@@ -168,7 +211,9 @@ Essentials:
 - Do not use `--reservation`: bookings grant a QoS, not a Slurm reservation.
 - Finish and release your job **before the booking ends**; expiry does not terminate a running job but triggers notifications.
 - Limits per user on `scavenger`: six instances of each profile and 24 in total.
-- **Preemption** can stop a job at any time. Slurm does not save state: your application must write checkpoints and reload them when restarted. See the SIGTERM handling in `templates/job.sbatch`.
+
+> [!WARNING]
+> **Preemption** can stop a job at any time. Slurm does not save state: your application must write checkpoints and reload them when restarted. See the SIGTERM handling in `templates/job.sbatch`.
 
 ## 7. Writing your own job
 
@@ -216,8 +261,8 @@ tests/test_hpc.sh       offline test suite
 
 | Symptom                                          | Likely cause and action                                                                               |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
-| `hpc: HPC_USER: set HPC_USER ...`                | Export `HPC_USER` ([installation](#2-installation))                                                   |
-| SSH hangs or times out                           | OpenVPN is not connected                                                                              |
+| `hpc: HPC_USER: set HPC_USER ...`                | Set `HPC_USER` in `.env` ([installation](#2-installation))                                            |
+| SSH hangs or times out                           | The university OpenVPN is not connected, or its configuration was never requested through UniTicket   |
 | `cd: projects/<name>: No such file or directory` | Run `hpc push` first, from the project directory                                                      |
 | `module: command not found`                      | The login shell on the head node does not define `module`; report the exact error                     |
 | Invalid or unauthorised QoS                      | Wrong spelling, no active booking, or the five-minute sync has not run yet; check `hpc qos`           |
@@ -236,9 +281,13 @@ When contacting cluster support, include the job ID, approximate time, the exact
 bash tests/test_hpc.sh
 ```
 
-The suite replaces `ssh` and `rsync` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation). It does not exercise the live cluster.
+The suite replaces `ssh` and `rsync` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation, `.env` loading). It does not exercise the live cluster.
 
 ## Before you leave
 
 - Save results and checkpoints to your home, and `hpc pull` what you need locally.
 - Cancel jobs you no longer need (`hpc cancel ID`) and release or cancel unused bookings in the portal.
+
+## License
+
+Released under the [MIT License](license).
