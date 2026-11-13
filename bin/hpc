@@ -13,7 +13,8 @@ while [[ -L $src ]]; do
   src=$(readlink "$src")
   [[ $src == /* ]] || src=$dir/$src
 done
-ENV_FILE=$(cd "$(dirname "$src")/.." && pwd)/.env
+ROOT=$(cd "$(dirname "$src")/.." && pwd)
+ENV_FILE=$ROOT/.env
 if [[ -z ${HPC_USER:-} && -f $ENV_FILE ]]; then
   set -a
   # shellcheck disable=SC1090
@@ -82,7 +83,22 @@ cmd_submit() {
 }
 
 cmd_queue() {
-  remote 'squeue -u "$USER" -o "%.10i %.24j %.10T %.10M %.24q %R"; sacct -X -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode'
+  local query='squeue -u "$USER" -o "%.10i %.24j %.10T %.10M %.24q %R"; sacct -X -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode'
+  case ${1:-} in
+    '') remote "$query" ;;
+    -w)
+      local seconds=${2:-10}
+      [[ $seconds =~ ^[0-9]+$ ]] || die "usage: hpc queue [-w [SECONDS]]"
+      # One SSH session; `watch` on the head node re-runs the query until Ctrl-C.
+      TTY=1 remote "watch -n $seconds '$query'"
+      ;;
+    *) die "usage: hpc queue [-w [SECONDS]]" ;;
+  esac
+}
+
+# Interactive view of the cluster and of your jobs: the Textual application in hpc_top/, run locally by uv.
+cmd_top() {
+  HPC_TARGET=$TARGET exec uv run --project "$ROOT" hpc-top
 }
 
 cmd_qos() {
@@ -127,7 +143,8 @@ usage() {
 usage: hpc COMMAND [ARGS]
   submit CLASS --time T [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT
                   submit SCRIPT from ~/projects/<current dir name>; CLASS: tiny|small|medium|large|cpu
-  queue           your jobs and the last day of job history
+  queue [-w [S]]  your jobs and the last day of job history; -w refreshes every S seconds (default 10)
+  top             interactive view of the cluster and of your jobs (needs uv on this machine)
   qos             QoS associations granted to your account
   push            sync the current directory to the cluster (honours .gitignore, never deletes)
   pull PATH...    fetch files from the cluster project directory
@@ -139,7 +156,8 @@ EOF
 
 case ${1:-help} in
   submit) shift; cmd_submit "$@" ;;
-  queue)  cmd_queue ;;
+  queue)  shift; cmd_queue "$@" ;;
+  top)    cmd_top ;;
   qos)    cmd_qos ;;
   push)   cmd_push ;;
   pull)   shift; cmd_pull "$@" ;;

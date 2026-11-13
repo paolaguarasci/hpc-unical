@@ -123,7 +123,8 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
           </thead>
           <tbody class="divide-y divide-line">
             <tr><td class="px-5 py-4 font-mono text-accent">hpc submit CLASS --time T SCRIPT</td><td class="px-5 py-4 text-fg/90">Submit a batch script with the preset of the class; <code class="font-mono">--booked</code>, <code class="font-mono">--requeue</code>, <code class="font-mono">--cpus</code>, <code class="font-mono">--mem</code> are optional</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc queue</td><td class="px-5 py-4 text-fg/90">Your pending and running jobs, plus the last 24 hours of history</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc queue [-w [SECONDS]]</td><td class="px-5 py-4 text-fg/90">Your pending and running jobs, plus the last 24 hours of history; <code class="font-mono">-w</code> refreshes the view live</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc top</td><td class="px-5 py-4 text-fg/90">Interactive view of the cluster and of your jobs: usage bars, live output, history; requires <code class="font-mono">uv</code></td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc qos</td><td class="px-5 py-4 text-fg/90">QoS associations granted to your account</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc push</td><td class="px-5 py-4 text-fg/90">Sync the current directory to the cluster; honours <code class="font-mono">.gitignore</code>, never deletes</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc pull PATH…</td><td class="px-5 py-4 text-fg/90">Fetch the named files from the cluster project directory</td></tr>

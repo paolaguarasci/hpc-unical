@@ -35,7 +35,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
 | **Presets**         | `tiny`, `small`, `medium`, `large` GPU slices and `cpu`, with the cluster's default CPU and RAM |
 | **QoS handling**    | Preemptible `scavenger` by default, protected `gpu_<class>_reserved` with `--booked`            |
 | **File sync**       | `push` / `pull` over `rsync`, honouring `.gitignore`, never deleting                            |
-| **Monitoring**      | `queue`, `logs -f`, `qos`, `cancel`                                                             |
+| **Monitoring**      | `top` (interactive view), `queue -w`, `logs -f`, `qos`, `cancel`                                |
 | **Safe by default** | A wall-clock limit is mandatory; the cluster login stays in a git-ignored `.env`                |
 
 ## Contents
@@ -49,6 +49,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
   - [4. Command reference](#4-command-reference)
     - [`submit`](#submit)
     - [`queue`](#queue)
+    - [`top`](#top)
     - [`qos`](#qos)
     - [`push` and `pull`](#push-and-pull)
     - [`logs`](#logs)
@@ -112,7 +113,8 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | Command                                      | Purpose                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | `hpc submit CLASS --time T [options] SCRIPT` | Submit a batch script with the preset of `CLASS`                 |
-| `hpc queue`                                  | Your pending and running jobs, plus the last 24 hours of history |
+| `hpc queue [-w [SECONDS]]`                   | Your pending and running jobs, plus the last 24 hours of history |
+| `hpc top`                                    | Interactive view of the cluster and of your jobs (requires `uv`) |
 | `hpc qos`                                    | QoS associations granted to your account                         |
 | `hpc push`                                   | Sync the current directory to the cluster                        |
 | `hpc pull PATH...`                           | Fetch files from the cluster project directory                   |
@@ -149,6 +151,40 @@ The command always adds `--partition=aiq --nodes=1 --ntasks=1` and the profile a
 ### `queue`
 
 Prints `squeue` for your user (job ID, name, state, elapsed time, **effective QoS**, node or pending reason) followed by `sacct` for the last 24 hours. Jupyter kernels are Slurm jobs and appear here too.
+
+```bash
+hpc queue         # print once
+hpc queue -w      # live view, refreshed every 10 seconds (Ctrl-C to stop)
+hpc queue -w 30   # live view, refreshed every 30 seconds
+```
+
+The live view keeps a single SSH session open and runs `watch` on the head node.
+
+### `top`
+
+Opens an interactive, full-screen view that refreshes every 5 seconds:
+
+- **Nodes**: bar charts of the allocated CPU cores, memory and GPU slices (per MIG profile) of each node of the `aiq` partition, the trend of CPU and GPU allocation since the view was opened, and, on the lower border, the classes that have a free GPU slice right now.
+- **My jobs**: your pending and running jobs, coloured by state; a pending job shows the estimated start time when Slurm provides one.
+- **Details**: for the highlighted job, its state, node and account; when it was submitted and started, how long it waited in the queue and when it ends; bars of the elapsed time against the limit and, while it runs, of the peak memory and GPU memory against the request, with the trend of their current values; cores and CPU time. A job that has run for five minutes using less than half of the requested memory is flagged. For a finished job the panel reports the CPU and memory efficiency computed by `seff`.
+- **Log**: the last 200 lines of the `*-<job ID>.out` file of the highlighted job, followed live.
+- **Last 24 h**: the jobs that ended in the last day, with their state and exit code.
+
+| Key            | Action                                                        |
+| -------------- | ------------------------------------------------------------- |
+| `Up` / `Down`  | Highlight a job; the log panel follows it                     |
+| `Tab`          | Move between the job list, the log and the history            |
+| `c`            | Cancel the highlighted pending or running job, after a prompt |
+| `l`            | Open the whole log in `less` on the cluster (`q` to return)   |
+| `t`            | Open an SSH tunnel to a port of the highlighted running job, or close it |
+| `r`            | Refresh now                                                   |
+| `q`            | Quit                                                          |
+
+**Alerts.** While the view is open, a notification is raised when one of your jobs starts, ends (with its final state and exit code) or has used 90% of its time limit. On macOS it is also sent to the notification centre.
+
+**Tunnels.** `t` asks for a port and forwards `localhost:<port>` to the same port on the node of the job, through the head node; the address appears in the job list. Tunnels are closed when the job ends or the view is quit.
+
+The view is a [Textual](https://textual.textualize.io/) application (`hpc_top/`) that runs on your machine; it requires [`uv`](https://docs.astral.sh/uv/), which installs the Python dependencies on first use. Each refresh is one SSH command, and all of them share a single multiplexed connection.
 
 ### `qos`
 
@@ -278,10 +314,11 @@ When contacting cluster support, include the job ID, approximate time, the exact
 ## 10. Tests
 
 ```bash
-bash tests/test_hpc.sh
+bash tests/test_hpc.sh                          # the hpc command
+uv run python -m unittest discover -s tests     # the interactive view
 ```
 
-The suite replaces `ssh` and `rsync` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation, `.env` loading). It does not exercise the live cluster.
+The Python tests cover the parsers of the interactive view on output captured from the cluster and drive the application with a fake cluster. The shell suite replaces `ssh`, `rsync` and `uv` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation, `.env` loading). It does not exercise the live cluster.
 
 ## Public page
 

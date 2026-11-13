@@ -1,0 +1,101 @@
+Screen {
+    background: $background;
+}
+
+#title {
+    height: 1;
+    background: $primary;
+    color: $background;
+    text-style: bold;
+}
+
+#nodes {
+    height: 10;
+}
+
+NodePanel {
+    width: 1fr;
+    padding: 0 1;
+    border: round $primary;
+    border-title-color: $primary;
+    border-title-style: bold;
+    border-subtitle-color: $secondary;
+}
+
+#middle {
+    height: 1fr;
+}
+
+#jobs {
+    width: 3fr;
+    height: 100%;
+}
+
+#side {
+    width: 2fr;
+}
+
+#details {
+    height: 13;
+    padding: 0 1;
+}
+
+#log {
+    height: 1fr;
+    padding: 0 1;
+    background: $surface;
+}
+
+#history {
+    height: 8;
+}
+
+#jobs, #details, #log, #history {
+    border: round $panel;
+    border-title-color: $secondary;
+    border-title-style: bold;
+}
+
+#jobs:focus, #log:focus, #history:focus {
+    border: round $primary;
+    border-title-color: $primary;
+}
+
+DataTable {
+    background: $background;
+}
+
+DataTable > .datatable--header {
+    background: $surface;
+    color: $secondary;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: $primary 10%;
+}
+
+DataTable:focus > .datatable--cursor {
+    background: $primary 30%;
+    text-style: bold;
+}
+
+ConfirmCancel, PortPrompt {
+    align: center middle;
+    background: $background 70%;
+}
+
+#port {
+    width: 60;
+    border: heavy $secondary;
+    border-title-color: $secondary;
+    background: $surface;
+}
+
+#confirm {
+    width: auto;
+    height: auto;
+    padding: 1 4;
+    border: heavy $error;
+    background: $surface;
+}

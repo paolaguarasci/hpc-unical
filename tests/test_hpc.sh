@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Offline tests for bin/hpc: ssh and rsync are replaced by stubs that log their arguments.
+# Offline tests for bin/hpc: ssh, rsync and uv are replaced by stubs that log their arguments.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -7,7 +7,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/stubs" "$WORK/proj"
 export LOG="$WORK/calls.log"
-for tool in ssh rsync; do
+for tool in ssh rsync uv; do
   printf '#!/bin/sh\necho "%s $*" >> "$LOG"\n' "$tool" > "$WORK/stubs/$tool"
   chmod +x "$WORK/stubs/$tool"
 done
@@ -85,6 +85,18 @@ expect_error "cpu cannot be booked" submit cpu --booked --time 00:05:00 job.sbat
 run queue
 expect_logged "queue squeue" "squeue -u"
 expect_logged "queue sacct" "sacct"
+expect_not_logged "queue runs once" "watch"
+run queue -w
+expect_logged "queue -w allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "queue -w default interval" "watch -n 10 "
+expect_logged "queue -w watches squeue" "squeue -u"
+expect_logged "queue -w watches sacct" "sacct"
+run queue -w 3
+expect_logged "queue -w custom interval" "watch -n 3 "
+expect_error "queue -w rejects non-numeric interval" queue -w abc
+expect_error "queue rejects unknown option" queue -x
+run top
+expect_logged "top runs the application from the repository" "uv run --project $ROOT hpc-top"
 run qos
 expect_logged "qos sacctmgr" "sacctmgr"
 
