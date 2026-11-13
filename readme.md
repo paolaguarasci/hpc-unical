@@ -4,7 +4,7 @@
 &nbsp;&nbsp;&nbsp;
 <img src="https://cdn.simpleicons.org/nvidia/76B900" alt="NVIDIA" height="56">
 &nbsp;&nbsp;&nbsp;
-<img src="https://cdn.simpleicons.org/gnometerminal/241F31" alt="Terminal" height="56">
+<img src="https://cdn.simpleicons.org/gnometerminal/C6FF3D" alt="Terminal" height="56">
 &nbsp;&nbsp;&nbsp;
 <img src="https://cdn.simpleicons.org/openvpn/EA7E20" alt="OpenVPN" height="56">
 
@@ -282,6 +282,14 @@ bash tests/test_hpc.sh
 ```
 
 The suite replaces `ssh` and `rsync` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation, `.env` loading). It does not exercise the live cluster.
+
+## Public page
+
+The landing page lives in `docs/` and is published with GitHub Pages. Its stylesheet is compiled from Tailwind, so no third-party script is loaded. After editing `docs/index.html` or `site-src/`, rebuild it:
+
+```bash
+npx tailwindcss@3.4.17 -c site-src/tailwind.config.js -i site-src/input.css -o docs/style.css --minify
+```
 
 ## Before you leave
 
