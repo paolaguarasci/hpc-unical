@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# hpc: command-line helpers for the UniCal HPC cluster, run from your own machine over SSH.
+# Requires the university OpenVPN connection and HPC_USER (your cluster login).
+set -euo pipefail
+
+HOST=hpcgate.unical.it
+
+# Load HPC_USER from <repo>/.env unless it is already set. The repo is located by
+# following symlinks, so the command works from any directory once linked on PATH.
+src=${BASH_SOURCE[0]}
+while [[ -L $src ]]; do
+  dir=$(cd "$(dirname "$src")" && pwd)
+  src=$(readlink "$src")
+  [[ $src == /* ]] || src=$dir/$src
+done
+ENV_FILE=$(cd "$(dirname "$src")/.." && pwd)/.env
+if [[ -z ${HPC_USER:-} && -f $ENV_FILE ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+  set +a
+fi
+: "${HPC_USER:?set HPC_USER in $ENV_FILE or in the environment}"
+TARGET="$HPC_USER@$HOST"
+# The current local directory maps to ~/projects/<its name> on the cluster.
+REMOTE_DIR="projects/$(basename "$PWD")"
+
+die() { echo "hpc: $*" >&2; exit 1; }
+
+# Run a command on the head node in a login shell with Slurm loaded.
+# Set TTY=1 to allocate a terminal (needed to interrupt a remote `tail -f`).
+remote() {
+  local cmd="module load slurm && $1" quote="'" escaped="'\\''"
+  ssh ${TTY:+-t} "$TARGET" "bash -lc '${cmd//$quote/$escaped}'"
+}
+
+# Quote arguments for the remote shell.
+quote_args() { printf '%q ' "$@"; }
+
+# Class presets from the cluster guide: MIG profile, default CPU cores and RAM.
+preset() {
+  case $1 in
+    tiny)   PROFILE=1g.35gb;  CPUS=2;  MEM=32G ;;
+    small)  PROFILE=2g.35gb;  CPUS=3;  MEM=64G ;;
+    medium) PROFILE=4g.71gb;  CPUS=6;  MEM=128G ;;
+    large)  PROFILE=7g.141gb; CPUS=11; MEM=240G ;;
+    cpu)    PROFILE='';       CPUS=1;  MEM=16G ;;
+    *) die "unknown class '$1' (tiny|small|medium|large|cpu)" ;;
+  esac
+}
+
+cmd_submit() {
+  [[ $# -ge 1 ]] || die "usage: hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT"
+  local class=$1 time='' booked=0 requeue=0 script=''
+  shift
+  preset "$class"
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time)    time=${2:?--time needs a value}; shift 2 ;;
+      --cpus)    CPUS=${2:?--cpus needs a value}; shift 2 ;;
+      --mem)     MEM=${2:?--mem needs a value}; shift 2 ;;
+      --booked)  booked=1; shift ;;
+      --requeue) requeue=1; shift ;;
+      -*)        die "unknown option $1" ;;
+      *)         [[ -z $script ]] || die "only one script allowed"; script=$1; shift ;;
+    esac
+  done
+  [[ -n $time ]] || die "--time is required"
+  [[ -n $script ]] || die "missing SCRIPT"
+
+  local qos=scavenger
+  if [[ $booked -eq 1 ]]; then
+    [[ -n $PROFILE ]] || die "the cpu class has no booking"
+    qos=gpu_${class}_reserved
+  fi
+  local args=(--partition=aiq --qos="$qos" --nodes=1 --ntasks=1
+              --cpus-per-task="$CPUS" --mem="$MEM" --time="$time")
+  if [[ -n $PROFILE ]]; then args+=(--gres="gpu:$PROFILE:1"); fi
+  if [[ $requeue -eq 1 ]]; then args+=(--requeue); fi
+
+  remote "cd $(printf %q "$REMOTE_DIR") && sbatch $(quote_args "${args[@]}" "$script")"
+}
+
+cmd_queue() {
+  remote 'squeue -u "$USER" -o "%.10i %.24j %.10T %.10M %.24q %R"; sacct -X -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode'
+}
+
+cmd_qos() {
+  remote 'sacctmgr -nP show assoc where user="$USER" format=Account,User,QOS,DefaultQOS'
+}
+
+cmd_push() {
+  ssh "$TARGET" "mkdir -p $(printf %q "$REMOTE_DIR")"
+  rsync -az --exclude .git --filter=':- .gitignore' ./ "$TARGET:$REMOTE_DIR/"
+}
+
+cmd_pull() {
+  [[ $# -ge 1 ]] || die "usage: hpc pull PATH..."
+  local sources=() p
+  for p in "$@"; do sources+=("$TARGET:$REMOTE_DIR/./$p"); done
+  rsync -azR "${sources[@]}" ./
+}
+
+cmd_logs() {
+  local id='' a
+  for a in "$@"; do
+    case $a in
+      -f) TTY=1 ;;
+      *[!0-9]*) die "usage: hpc logs [JOB_ID] [-f]" ;;
+      *) id=$a ;;
+    esac
+  done
+  local follow='' pattern='*.out'
+  if [[ -n ${TTY:-} ]]; then follow=-f; fi
+  # Both slurm-%j.out and %x-%j.out put "-" before the ID, so "*-12.out" cannot match job 112.
+  if [[ -n $id ]]; then pattern="*-$id.out"; fi
+  remote "cd $(printf %q "$REMOTE_DIR") && f=\$(ls -t $pattern 2>/dev/null | head -n 1); [ -n \"\$f\" ] || { echo 'hpc: no log found' >&2; exit 1; }; echo \"== \$f\"; tail -n 50 $follow \"\$f\""
+}
+
+cmd_cancel() {
+  [[ ${1:-} =~ ^[0-9]+$ ]] || die "usage: hpc cancel JOB_ID"
+  remote "scancel $1"
+}
+
+usage() {
+  cat <<'EOF'
+usage: hpc COMMAND [ARGS]
+  submit CLASS --time T [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT
+                  submit SCRIPT from ~/projects/<current dir name>; CLASS: tiny|small|medium|large|cpu
+  queue           your jobs and the last day of job history
+  qos             QoS associations granted to your account
+  push            sync the current directory to the cluster (honours .gitignore, never deletes)
+  pull PATH...    fetch files from the cluster project directory
+  logs [ID] [-f]  show (or follow) the latest *.out, or the one matching job ID
+  cancel ID       cancel a job
+environment: HPC_USER (required) is your cluster login
+EOF
+}
+
+case ${1:-help} in
+  submit) shift; cmd_submit "$@" ;;
+  queue)  cmd_queue ;;
+  qos)    cmd_qos ;;
+  push)   cmd_push ;;
+  pull)   shift; cmd_pull "$@" ;;
+  logs)   shift; cmd_logs "$@" ;;
+  cancel) shift; cmd_cancel "$@" ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 1 ;;
+esac
