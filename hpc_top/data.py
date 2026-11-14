@@ -245,6 +245,7 @@ class Cluster:
         ]
         return [
             "ssh",
+            "-o", "ConnectTimeout=10",  # an unreachable cluster (VPN down) is reported quickly
             *connection,
             self.target,
             "bash -lc " + shlex.quote("module load slurm && " + command),

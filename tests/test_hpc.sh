@@ -22,16 +22,15 @@ expect_logged() { grep -qF -- "$2" "$LOG" && ok "$1" || { fail "$1 (missing: $2)
 expect_not_logged() { grep -qF -- "$2" "$LOG" && fail "$1 (unexpected: $2)" || ok "$1"; }
 expect_error() { shift_name=$1; shift; if run "$@"; then fail "$shift_name (exit 0)"; else ok "$shift_name"; fi; }
 
-# --- config ---
-(unset HPC_USER; cd "$WORK/proj" && "$ROOT/bin/hpc" queue >/dev/null 2>&1) && fail "HPC_USER required" || ok "HPC_USER required"
-
-# --- .env loading (isolated copy of the repo layout, reached directly and through a symlink) ---
+# --- config: HPC_USER and .env loading ---
+# Run on an isolated copy of the repo layout (reached directly and through a symlink), so that
+# the developer's own .env cannot satisfy the "HPC_USER is required" check.
 mkdir -p "$WORK/repo/bin" "$WORK/links"
 cp "$ROOT/bin/hpc" "$WORK/repo/bin/hpc"
 ln -s "$WORK/repo/bin/hpc" "$WORK/links/hpc"
 for entry in "$WORK/repo/bin/hpc" "$WORK/links/hpc"; do
   : > "$LOG"
-  (unset HPC_USER; cd "$WORK/proj" && "$entry" queue >/dev/null 2>&1) && fail ".env missing fails ($entry)" || ok ".env missing fails ($entry)"
+  (unset HPC_USER; cd "$WORK/proj" && "$entry" queue >/dev/null 2>&1) && fail "HPC_USER required without .env ($entry)" || ok "HPC_USER required without .env ($entry)"
   echo 'HPC_USER=fromenv' > "$WORK/repo/.env"
   : > "$LOG"
   (unset HPC_USER; cd "$WORK/proj" && "$entry" queue >/dev/null 2>&1)

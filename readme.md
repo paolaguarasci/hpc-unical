@@ -182,9 +182,9 @@ Opens an interactive, full-screen view that refreshes every 5 seconds:
 
 **Alerts.** While the view is open, a notification is raised when one of your jobs starts, ends (with its final state and exit code) or has used 90% of its time limit. On macOS it is also sent to the notification centre.
 
-**Tunnels.** `t` asks for a port and forwards `localhost:<port>` to the same port on the node of the job, through the head node; the address appears in the job list. Tunnels are closed when the job ends or the view is quit.
+**Tunnels.** `t` asks for a port and forwards `localhost:<port>` to the same port on the node of the job, through the head node; the address appears in the job list, followed by `✓` when a server answers on that port or by `✗ no server` when nothing listens there (check the port in the log). Tunnels are closed when the job ends or the view is quit.
 
-The view is a [Textual](https://textual.textualize.io/) application (`hpc_top/`) that runs on your machine; it requires [`uv`](https://docs.astral.sh/uv/), which installs the Python dependencies on first use. Each refresh is one SSH command, and all of them share a single multiplexed connection.
+The view is a [Textual](https://textual.textualize.io/) application (`hpc_top/`) that runs on your machine; it requires [`uv`](https://docs.astral.sh/uv/), which installs the Python dependencies on first use. Each refresh is one SSH command, and all of them share a single multiplexed connection; refreshes never overlap, and a command that gets no answer within 30 seconds is stopped and reported. The pager and the tunnels use connections of their own.
 
 ### `qos`
 
