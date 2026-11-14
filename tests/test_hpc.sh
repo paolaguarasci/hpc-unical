@@ -170,5 +170,35 @@ STUB_EXIT=1 expect_error "doctor fails when the cluster is unreachable" doctor
 expect_not_logged "doctor skips the cluster checks when unreachable" "sbatch --version"
 grep -q '^FAIL ' "$WORK/out" && ok "doctor reports the failed check" || fail "doctor reports the failed check"
 
+# --- job array tasks (ID_TASK) ---
+run logs 10211_2
+expect_logged "logs of an array task asks Slurm for its real job ID" "sacct -X -n -P -j 10211_2 --format=JobIDRaw"
+run logs 123
+expect_not_logged "logs of a plain job needs no lookup" "JobIDRaw"
+run cancel 10211_2
+expect_logged "cancel accepts an array task" "scancel 10211_2"
+run wait 10211_2
+expect_logged "wait accepts an array task" "sacct -X -n -P -j 10211_2 --format=JobID,State"
+expect_error "logs rejects a malformed task ID" logs 12_
+expect_error "logs rejects a non-numeric ID" logs abc
+
+# --- submit / shell --push ---
+run submit tiny --time 00:05:00 job.sbatch
+expect_not_logged "submit does not push by default" "rsync"
+run submit tiny --time 00:05:00 --push job.sbatch
+expect_logged "submit --push syncs" "rsync -az"
+expect_logged "submit --push still submits" "sbatch --partition=aiq"
+[[ $(grep -n rsync "$LOG" | head -n 1 | cut -d: -f1) -lt $(grep -n sbatch "$LOG" | head -n 1 | cut -d: -f1) ]] \
+  && ok "submit --push syncs before submitting" || fail "submit --push syncs before submitting"
+run shell cpu --time 00:05:00 --push
+expect_logged "shell --push syncs" "rsync -az"
+
+# --- info / free ---
+run info 123
+expect_logged "info runs seff" "seff 123"
+expect_error "info rejects non-numeric" info abc
+run free
+expect_logged "free runs the Python entry point from the repository" "uv run --project $ROOT hpc-free"
+
 echo
 [[ $fails -eq 0 ]] && echo "all passed" || { echo "$fails failed"; exit 1; }

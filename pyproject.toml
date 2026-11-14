@@ -8,6 +8,7 @@ dependencies = ["textual>=8.2"]
 
 [project.scripts]
 hpc-top = "hpc_top.app:main"
+hpc-free = "hpc_top.free:main"
 
 [build-system]
 requires = ["hatchling"]

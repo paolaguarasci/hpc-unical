@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from rich.text import Text
 from textual.widget import Widget
 
-from hpc_top.data import WASTE_AFTER, Node, Record, Usage, free_classes, megabytes, seconds
+from hpc_top.data import WASTE_AFTER, Node, Record, Usage, free_text, megabytes, seconds
 
 # Palette shared with the public page (site-src/input.css).
 ACCENT = "#C6FF3D"
@@ -183,9 +183,8 @@ class NodePanel(Widget):
         self.cpu_trend.append(node.cpu_used / node.cpu_total)
         slices = list(node.gpus.values())
         self.gpu_trend.append(sum(used for used, _ in slices) / sum(total for _, total in slices) if slices else 0)
-        free = " · ".join(f"{name} {count}" for name, count in free_classes(node).items())
         self.border_title = f"{node.name} · {node.state}"
-        self.border_subtitle = f"free now: {free}" if free else "no free GPU slice"
+        self.border_subtitle = free_text(node)
         self.refresh()
 
     def render(self) -> Text:

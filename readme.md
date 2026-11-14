@@ -35,7 +35,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
 | **Presets**         | `tiny`, `small`, `medium`, `large` GPU slices and `cpu`, with the cluster's default CPU and RAM |
 | **QoS handling**    | Preemptible `scavenger` by default, protected `gpu_<class>_reserved` with `--booked`            |
 | **File sync**       | `push` / `pull` over `rsync`, honouring `.gitignore`, never deleting                            |
-| **Monitoring**      | `top` (interactive view), `queue -w`, `logs -f`, `wait`, `qos`, `cancel`                        |
+| **Monitoring**      | `top` (interactive view), `queue -w`, `logs -f`, `wait`, `info`, `free`, `qos`, `cancel`        |
 | **Interactive use** | `shell` on a compute node, `tunnel` to a server run by a job, `doctor` to check the setup       |
 | **Safe by default** | A wall-clock limit is mandatory; the cluster login stays in a git-ignored `.env`                |
 
@@ -59,6 +59,8 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`tunnel`](#tunnel)
     - [`wait`](#wait)
     - [`doctor`](#doctor)
+    - [`info`](#info)
+    - [`free`](#free)
   - [5. Resource classes](#5-resource-classes)
   - [6. QoS, bookings and preemption](#6-qos-bookings-and-preemption)
   - [7. Writing your own job](#7-writing-your-own-job)
@@ -129,12 +131,16 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc tunnel ID PORT`                         | Forward a local port to a server run by job `ID`                 |
 | `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
 | `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
+| `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
+| `hpc free`                                   | Classes with a free GPU slice right now (requires `uv`)          |
 | `hpc help`                                   | Print usage                                                      |
+
+Wherever a command takes a job ID, a task of a job array is written `ID_TASK`, for instance `10211_2`.
 
 ### `submit`
 
 ```bash
-hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
+hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--push] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
 ```
 
 | Option                   | Meaning                                                                                                                |
@@ -143,6 +149,7 @@ hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] 
 | `--time T`               | **Required.** Wall-clock limit, e.g. `00:30:00` or `1-12:00:00`. The partition has no default limit, so always set one |
 | `--booked`               | Use the protected QoS `gpu_<class>_reserved` (requires an active booking). Not available for `cpu`                     |
 | `--requeue`              | Allow Slurm to put the job back in the queue after preemption. Use only if restarting the script is safe               |
+| `--push`                 | Run `hpc push` first, so that the job cannot start on a stale copy of the project                                      |
 | `--cpus N`, `--mem SIZE` | Override the class defaults (e.g. `--mem 48G`)                                                                         |
 | `SCRIPT`                 | Path **relative to the project directory**, e.g. `job.sbatch` or `templates/demo.sbatch`                               |
 | `-- SBATCH_OPTION...`    | Everything after `--` is passed to `sbatch` unchanged, e.g. `--array`, `--job-name` or `--dependency`                  |
@@ -155,6 +162,7 @@ hpc submit medium --time 12:00:00 --requeue train.sbatch      # restartable afte
 hpc submit large --booked --time 24:00:00 train.sbatch        # protected, needs a Large booking
 hpc submit cpu --time 00:10:00 --cpus 4 preprocess.sbatch     # CPU only
 hpc submit cpu --time 01:00:00 run.sbatch -- --array=1-50%10  # job array: 50 tasks, 10 at a time
+hpc submit small --time 02:00:00 --push train.sbatch          # sync the project, then submit
 ```
 
 The command always adds `--partition=aiq --nodes=1 --ntasks=1` and the profile as `--gres=gpu:<profile>:1`. Resources and QoS given on the command line override any `#SBATCH` line in the script, so keep them out of your scripts. The options after `--` are placed after the presets and are not validated: a repeated option (for instance a second `--mem`) replaces the preset. In a job array, each task gets the resources of the class, and `%x-%j.out` gives each task a log of its own.
@@ -188,8 +196,11 @@ Opens an interactive, full-screen view that refreshes every 5 seconds:
 | `c`            | Cancel the highlighted pending or running job, after a prompt |
 | `l`            | Open the whole log in `less` on the cluster (`q` to return)   |
 | `t`            | Open an SSH tunnel to a port of the highlighted running job, or close it |
+| `a`            | Switch the job list between your jobs and the jobs of every user |
 | `r`            | Refresh now                                                   |
 | `q`            | Quit                                                          |
+
+**All jobs.** `a` lists the pending and running jobs of every user, with a column for the owner, to show what occupies the cluster while a job of yours is pending. The jobs of other users are only listed: their logs and usage are never read, and they cannot be cancelled or tunnelled. The counters in the title bar always refer to your jobs.
 
 **Alerts.** While the view is open, a notification is raised when one of your jobs starts, ends (with its final state and exit code) or has used 90% of its time limit. On macOS it is also sent to the notification centre.
 
@@ -220,9 +231,10 @@ hpc logs          # latest *.out in the project directory
 hpc logs 4821     # the output of job 4821
 hpc logs -f       # follow the latest output (Ctrl-C to stop)
 hpc logs 4821 -f
+hpc logs 4821_3   # task 3 of the job array 4821
 ```
 
-The lookup relies on the default naming `slurm-<id>.out` or the `%x-<id>.out` pattern used by the templates.
+The lookup relies on the default naming `slurm-<id>.out` or the `%x-<id>.out` pattern used by the templates. Both name the file after the job's own ID, which for a task of a job array differs from `ID_TASK`; `hpc logs` asks Slurm for it.
 
 ### `cancel`
 
@@ -233,10 +245,10 @@ hpc cancel 4821
 ### `shell`
 
 ```bash
-hpc shell CLASS --time HH:MM:SS [--booked] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
+hpc shell CLASS --time HH:MM:SS [--booked] [--push] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
 ```
 
-Opens an interactive shell on a compute node (`srun --pty bash -l`), with the same presets, QoS rules and options as `submit`; it starts in the project directory, so run `hpc push` first. Use it to build or test an environment instead of working on the head node. The session is a Slurm job: it is preemptible unless booked, it ends at the time limit, and it holds its resources until you leave it with `exit`.
+Opens an interactive shell on a compute node (`srun --pty bash -l`), with the same presets, QoS rules and options as `submit`; it starts in the project directory, so run `hpc push` first or add `--push`. Use it to build or test an environment instead of working on the head node. The session is a Slurm job: it is preemptible unless booked, it ends at the time limit, and it holds its resources until you leave it with `exit`.
 
 ```bash
 hpc shell cpu --time 00:30:00          # one core, to try a Conda environment
@@ -266,6 +278,24 @@ hpc doctor
 ```
 
 Checks, in order: `ssh`, `rsync` and `uv` on your machine; that the head node answers with your SSH key (which also proves that the VPN is up); that Slurm loads on the head node; that the project directory of the current directory exists on the cluster. Each line is `ok` or `FAIL` with the action to take, and the exit status is non-zero when a check fails. The cluster checks are skipped when the head node does not answer.
+
+### `info`
+
+```bash
+hpc info 4821
+```
+
+Prints the report of `seff` for a finished job: state, cores, CPU time used and CPU efficiency, wall-clock time, memory used and memory efficiency. Read it after a run to size `--cpus` and `--mem` of the next one.
+
+### `free`
+
+```bash
+hpc free
+# ainode01  free now: tiny 4 · small 4 · medium 4 · large 4
+# ainode02  free now: tiny 2 · small 4 · medium 2 · large 3
+```
+
+Lists, for each node, the classes that have a free GPU slice right now and how many, to choose a class before submitting. It considers GPU slices only, not free cores, memory or QoS limits. It reuses the code of `hpc top`, so it requires [`uv`](https://docs.astral.sh/uv/).
 
 ## 5. Resource classes
 

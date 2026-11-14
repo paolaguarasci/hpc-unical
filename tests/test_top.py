@@ -9,22 +9,23 @@ from textual.widgets import DataTable
 from textual.worker import WorkerCancelled
 
 from hpc_top.app import TopApp
-from hpc_top.data import Cluster, events, free_classes, megabytes, parse_snapshot, seconds, snapshot_command
+from hpc_top.data import NODES_COMMAND, Cluster, events, free_classes, megabytes, parse_snapshot, seconds, snapshot_command
+from hpc_top.free import report
 from hpc_top.widgets import DetailsPanel, NodePanel, bar, details_text, spark
 
 # Output captured from the real cluster on 2026-11-13, with the login replaced.
 SNAPSHOT = """\
 @@jobs
-10183|vllm-serve|RUNNING|3:59|30:00|scavenger|ainode02|/home/u1/projects/femtools-cluster|2026-11-13T21:57:15|
-10184|fem-l0|PENDING|0:00|1:00:00|scavenger|(Priority)|/home/u1/projects/femtools|2026-11-13T23:10:00|
+10183|vllm-serve|RUNNING|3:59|30:00|scavenger|ainode02|/home/u1/projects/femtools-cluster|2026-11-13T21:57:15|u1|
+10184|fem-l0|PENDING|0:00|1:00:00|scavenger|(Priority)|/home/u1/projects/femtools|2026-11-13T23:10:00|u1|
 @@nodes
 ainode01 mixed 30/66/0/96 2063758 983040 gpu:7g.141gb:4(S:0),gpu:4g.71gb:4(S:1),gpu:2g.35gb:4(S:1),gpu:1g.35gb:4(S:1) gpu:7g.141gb:0(IDX:N/A),gpu:4g.71gb:0(IDX:N/A),gpu:2g.35gb:0(IDX:N/A),gpu:1g.35gb:0(IDX:N/A)
 ainode02 mixed 26/70/0/96 2063758 409600 gpu:7g.141gb:4(S:0),gpu:4g.71gb:4(S:1),gpu:2g.35gb:4(S:1),gpu:1g.35gb:4(S:1) gpu:7g.141gb:1(IDX:0),gpu:4g.71gb:2(IDX:4,7),gpu:2g.35gb:0(IDX:N/A),gpu:1g.35gb:2(IDX:6,9)
 @@history
-10180|vllm-env|FAILED|00:00:02|1:0|/home/u1/projects/femtools-cluster|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users
-10181|vllm-env|COMPLETED|00:16:03|0:0|/home/u1/projects/femtools-cluster|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users
-10122|probe-tunnel|CANCELLED by 1234|00:00:08|0:0|/home/u1/projects/hpc|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users
-10183|vllm-serve|RUNNING|00:14:27|0:0|/home/u1/projects/femtools-cluster|2026-11-13T21:57:14|2026-11-13T21:57:15|Unknown|00:30:00|billing=6,cpu=6,gres/gpu:4g.71gb=1,gres/gpu=1,mem=128G,node=1|billing=6,cpu=6,gres/gpu:4g.71gb=1,gres/gpu=1,mem=128G,node=1|ainode02|jupyter_users
+10180|vllm-env|FAILED|00:00:02|1:0|/home/u1/projects/femtools-cluster|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users|10180
+10181|vllm-env|COMPLETED|00:16:03|0:0|/home/u1/projects/femtools-cluster|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users|10181
+10122|probe-tunnel|CANCELLED by 1234|00:00:08|0:0|/home/u1/projects/hpc|2026-11-13T21:39:31|2026-11-13T21:39:31|2026-11-13T21:39:33|01:00:00|billing=4,cpu=4,mem=32G,node=1|billing=4,cpu=4,mem=32G,node=1|ainode02|jupyter_users|10122
+10183|vllm-serve|RUNNING|00:14:27|0:0|/home/u1/projects/femtools-cluster|2026-11-13T21:57:14|2026-11-13T21:57:15|Unknown|00:30:00|billing=6,cpu=6,gres/gpu:4g.71gb=1,gres/gpu=1,mem=128G,node=1|billing=6,cpu=6,gres/gpu:4g.71gb=1,gres/gpu=1,mem=128G,node=1|ainode02|jupyter_users|10183
 @@log
 /home/u1/projects/femtools-cluster/vllm-serve-10183.out
 Downloading a\rDownloading b
@@ -40,6 +41,19 @@ Job Wall-clock time: 00:16:03
 Memory Utilized: 762.18 MB
 Memory Efficiency: 2.33% of 32.00 GB
 """
+
+# The same snapshot when the jobs of every user are requested: one job of another user is listed.
+EVERYONE = SNAPSHOT.replace(
+    "@@nodes",
+    "10190|train|RUNNING|1:00:00|2:00:00|scavenger|ainode01|/home/u2/projects/secret|2026-11-13T21:00:00|u2|\n@@nodes",
+)
+
+# A finished task of a job array: sacct shows ID_TASK, while the log is named after the raw job ID.
+ARRAY = SNAPSHOT.replace(
+    "@@log",
+    "10211_1|demo|COMPLETED|00:00:09|0:0|/home/u1/projects/hpc|2026-11-13T22:00:00|2026-11-13T22:00:01|"
+    "2026-11-13T22:00:10|00:02:00|billing=1,cpu=1,mem=16G,node=1|billing=1,cpu=1,mem=16G,node=1|ainode02|jupyter_users|10212\n@@log",
+)
 
 
 class FakeTunnel:
@@ -94,6 +108,7 @@ class ParseSnapshotTest(unittest.TestCase):
             ("10183", "vllm-serve", "RUNNING", "3:59", "30:00", "scavenger", "ainode02"),
         )
         self.assertEqual(running.workdir, "/home/u1/projects/femtools-cluster")
+        self.assertEqual(running.user, "u1")
         self.assertEqual((pending.state, pending.where), ("PENDING", "(Priority)"))
 
     def test_nodes(self):
@@ -125,6 +140,12 @@ class ParseSnapshotTest(unittest.TestCase):
         self.assertEqual(record.allocated["mem"], "128G")
         self.assertEqual(record.allocated["gres/gpu:4g.71gb"], "1")
         self.assertEqual((record.node, record.account), ("ainode02", "jupyter_users"))
+
+    def test_array_task_is_keyed_by_its_raw_job_id(self):
+        snapshot = parse_snapshot(ARRAY)
+        self.assertEqual((snapshot.records["10212"].id, snapshot.records["10212"].raw), ("10211_1", "10212"))
+        self.assertEqual(snapshot.records["10183"].raw, "10183")
+        self.assertEqual(events({"10212": "RUNNING"}, snapshot.records, set())[0][0], "Job completed")
 
     def test_usage_takes_the_largest_step(self):
         usage = self.snapshot.usage
@@ -183,7 +204,7 @@ class DetailsTest(unittest.TestCase):
 
     def test_pending_job_has_no_allocation_yet(self):
         line = ("10184|fem-l0|PENDING|00:00:00|0:0|/home/u1/projects/femtools|2026-11-13T22:00:00|Unknown|Unknown|"
-                "01:00:00|billing=2,cpu=2,gres/gpu:1g.35gb=1,gres/gpu=1,mem=32G,node=1||None assigned|jupyter_users")
+                "01:00:00|billing=2,cpu=2,gres/gpu:1g.35gb=1,gres/gpu=1,mem=32G,node=1||None assigned|jupyter_users|10184")
         record = parse_snapshot(f"@@jobs\n@@nodes\n@@history\n{line}\n@@log\n@@usage\n@@efficiency\n").records["10184"]
         text = details_text(record, None, {}, 70).plain
         for expected in ("PENDING", "not started", "2 cores", "32 GB requested", "GPU 1g.35gb"):
@@ -209,6 +230,21 @@ class CommandTest(unittest.TestCase):
             self.assertIn(tool, command)
         self.assertNotIn("tail", command)
         self.assertNotIn("sstat", command)
+
+    def test_snapshot_lists_my_jobs_unless_everyone_is_asked(self):
+        self.assertIn('squeue -h -u "$USER"', snapshot_command(None))
+        everyone = snapshot_command(None, everyone=True)
+        self.assertIn("squeue -h -O", everyone)
+        self.assertNotIn("-u", everyone.split("echo @@nodes")[0])
+        self.assertIn("UserName", everyone)
+
+    def test_free_report_lists_the_free_classes_of_each_node(self):
+        self.assertIn(NODES_COMMAND, snapshot_command(None))
+        self.assertEqual(
+            report(parse_snapshot(SNAPSHOT).nodes),
+            "ainode01  free now: tiny 4 · small 4 · medium 4 · large 4\n"
+            "ainode02  free now: tiny 2 · small 4 · medium 2 · large 3",
+        )
 
     def test_snapshot_tails_the_log_of_the_selected_job(self):
         command = snapshot_command(("/home/u1/my project", "10183"))
@@ -374,6 +410,66 @@ class TopAppTest(unittest.IsolatedAsyncioTestCase):
             await settle(app, pilot)
             self.assertFalse(app.loading)
             self.assertEqual(app.tables["jobs"].row_count, 0)
+
+    async def test_log_of_a_finished_array_task_is_found_by_its_raw_job_id(self):
+        cluster = FakeCluster()
+        cluster.output = ARRAY
+        app = TopApp(cluster, notifier=lambda *_: None)
+        async with app.run_test(size=(140, 44)) as pilot:
+            await settle(app, pilot)
+            history = app.tables["history"]
+            history.focus()
+            history.move_cursor(row=history.get_row_index("10212"))
+            await settle(app, pilot)
+            self.assertEqual(history.get_row("10212")[0], "10211_1")
+            self.assertIn("/home/u1/projects/hpc/*-10212.out", cluster.commands[-1])
+            self.assertEqual(app.query_one(DetailsPanel).border_title, "Details · 10211_1 demo")
+
+    async def test_a_key_lists_the_jobs_of_every_user_and_back(self):
+        cluster = FakeCluster()
+        app = TopApp(cluster, notifier=lambda *_: None)
+        async with app.run_test(size=(140, 44)) as pilot:
+            await settle(app, pilot)
+            jobs = app.tables["jobs"]
+            self.assertEqual(jobs.border_title, "My jobs")
+            self.assertIn('-u "$USER"', cluster.commands[-1])
+            cluster.output = EVERYONE
+            await pilot.press("a")
+            await settle(app, pilot)
+            self.assertEqual(jobs.border_title, "All jobs")
+            self.assertNotIn('-u "$USER"', cluster.commands[-1])
+            self.assertEqual(jobs.row_count, 3)
+            self.assertEqual(jobs.get_row("10190")[0], "u2")
+            # Only my jobs are counted in the title bar.
+            self.assertIn("1 running", str(app.title_bar.content))
+            cluster.output = SNAPSHOT
+            await pilot.press("a")
+            await settle(app, pilot)
+            self.assertEqual(jobs.border_title, "My jobs")
+            self.assertIn('-u "$USER"', cluster.commands[-1])
+            self.assertEqual(jobs.get_row("10183")[0], "10183")
+
+    async def test_a_job_of_another_user_is_listed_but_left_alone(self):
+        cluster = FakeCluster()
+        cluster.output = EVERYONE
+        app = TopApp(cluster, notifier=lambda *_: None)
+        async with app.run_test(size=(140, 44)) as pilot:
+            await settle(app, pilot)
+            await pilot.press("a")
+            await settle(app, pilot)
+            app.tables["jobs"].move_cursor(row=app.tables["jobs"].get_row_index("10190"))
+            await settle(app, pilot)
+            # Its log, usage and efficiency are not read.
+            self.assertIsNone(app.selected)
+            self.assertNotIn("secret", cluster.commands[-1])
+            self.assertNotIn("10190", cluster.commands[-1])
+            await pilot.press("c")
+            await pilot.pause()
+            await pilot.press("y")
+            await pilot.press("t")
+            await settle(app, pilot)
+            self.assertFalse([c for c in cluster.commands if c.startswith("scancel")])
+            self.assertEqual(cluster.tunnels, [])
 
     async def test_cancel_asks_for_confirmation(self):
         cluster = FakeCluster()

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import shlex
 import subprocess
 import sys
@@ -18,7 +17,7 @@ from textual.screen import ModalScreen
 from textual.theme import Theme
 from textual.widgets import DataTable, Footer, Input, RichLog, Static
 
-from hpc_top.data import Cluster, Job, Record, Snapshot, events, parse_snapshot, snapshot_command
+from hpc_top.data import Cluster, Job, Record, Snapshot, events, parse_snapshot, snapshot_command, target
 from hpc_top.widgets import ACCENT, HOT, LINE, SKY, WARM, DetailsPanel, NodePanel, clock, state_text
 
 REFRESH_SECONDS = 5
@@ -99,6 +98,7 @@ class TopApp(App):
         ("c", "cancel_job", "Cancel job"),
         ("l", "full_log", "Full log"),
         ("t", "tunnel", "Tunnel"),
+        ("a", "toggle_everyone", "All / my jobs"),
     ]
 
     def __init__(self, cluster: Cluster, notifier=desktop_notification):
@@ -110,6 +110,8 @@ class TopApp(App):
         # job ID -> [port, ssh process, whether a server answers (None while being checked)]
         self.tunnels: dict[str, list] = {}
         self.jobs: dict[str, Job | Record] = {}
+        self.user = cluster.target.split("@")[0]
+        self.everyone = False  # the job list shows the jobs of every user
         self.loading = False  # a refresh is in flight
         self.stale = False  # another refresh was requested meanwhile
         self.active = "jobs"  # the table whose highlighted row drives the log panel
@@ -142,9 +144,7 @@ class TopApp(App):
     def on_mount(self) -> None:
         self.register_theme(THEME)
         self.theme = THEME.name
-        jobs = self.tables["jobs"]
-        jobs.border_title = "My jobs"
-        jobs.add_columns("ID", "Name", "State", "Time", "Limit", "QoS", "Node / reason", "Tunnel")
+        self.title_jobs()
         history = self.tables["history"]
         history.border_title = "Last 24 h"
         history.add_columns("ID", "Name", "State", "Elapsed", "Exit")
@@ -152,28 +152,43 @@ class TopApp(App):
         self.load()
         self.set_interval(REFRESH_SECONDS, self.load)
 
+    def title_jobs(self) -> None:
+        """Title and columns of the job list, which gains the user when it shows everyone's jobs."""
+        jobs = self.tables["jobs"]
+        jobs.clear(columns=True)
+        jobs.border_title = "All jobs" if self.everyone else "My jobs"
+        if self.everyone:
+            jobs.add_column("User")
+        jobs.add_columns("ID", "Name", "State", "Time", "Limit", "QoS", "Node / reason", "Tunnel")
+
+    def foreign(self, job: Job | Record) -> bool:
+        """Whether the job belongs to another user: it is listed, but never read or acted upon."""
+        return isinstance(job, Job) and job.user != self.user
+
     def load(self) -> None:
         """Request a refresh. Refreshes never overlap: one asked for while another runs follows it."""
         if self.loading:
             self.stale = True
             return
         self.loading, self.stale = True, False
-        self.fetch(self.selected)
+        self.fetch(self.selected, self.everyone)
 
     @work(thread=True)
-    def fetch(self, selected: tuple[str, str] | None) -> None:
+    def fetch(self, selected: tuple[str, str] | None, everyone: bool) -> None:
         try:
-            snapshot = parse_snapshot(self.cluster.run(snapshot_command(selected)))
+            snapshot = parse_snapshot(self.cluster.run(snapshot_command(selected, everyone)))
         except CLUSTER_ERRORS as error:
-            self.call_from_thread(self.loaded, None, selected, error)
+            self.call_from_thread(self.loaded, None, selected, everyone, error)
         else:
-            self.call_from_thread(self.loaded, snapshot, selected, None)
+            self.call_from_thread(self.loaded, snapshot, selected, everyone, None)
 
-    def loaded(self, snapshot: Snapshot | None, selected: tuple[str, str] | None, error: Exception | None) -> None:
+    def loaded(
+        self, snapshot: Snapshot | None, selected: tuple[str, str] | None, everyone: bool, error: Exception | None
+    ) -> None:
         self.loading = False
         if error:
             self.report(error)
-        else:
+        elif everyone == self.everyone:  # otherwise the list was switched meanwhile and a refresh follows
             self.show(snapshot, selected)
         if self.stale:
             self.load()
@@ -186,7 +201,8 @@ class TopApp(App):
         self.notify(message, title="Cluster command failed", severity="error")
 
     def show(self, snapshot: Snapshot, selected: tuple[str, str] | None) -> None:
-        self.jobs = {job.id: job for job in (*snapshot.history, *snapshot.jobs)}
+        # By raw job ID, which is the row key of both tables.
+        self.jobs = {**{record.raw: record for record in snapshot.history}, **{job.id: job for job in snapshot.jobs}}
         for title, message in events(self.states, snapshot.records, self.warned):
             self.notify(message, title=title)
             self.notifier(title, message)
@@ -197,7 +213,7 @@ class TopApp(App):
                 process.terminate()
                 del self.tunnels[job_id]
                 self.notify(f"The tunnel on port {port} of job {job_id} is closed.", severity="warning")
-        states = [job.state for job in snapshot.jobs]
+        states = [job.state for job in snapshot.jobs if not self.foreign(job)]
         self.title_bar.update(
             f" hpc top   {self.cluster.target}   ● {states.count('RUNNING')} running"
             f"   ● {states.count('PENDING')} pending   updated {datetime.now():%H:%M:%S}"
@@ -211,14 +227,20 @@ class TopApp(App):
         self.fill(
             "jobs",
             [
-                (j.id, (j.id, j.name, state_text(j.state), j.elapsed, j.limit, j.qos, self.where(j), self.tunnel_cell(j.id)))
+                (
+                    j.id,
+                    (
+                        *([j.user] if self.everyone else []),
+                        j.id, j.name, state_text(j.state), j.elapsed, j.limit, j.qos, self.where(j), self.tunnel_cell(j.id),
+                    ),
+                )
                 for j in snapshot.jobs
             ],
         )
         self.fill(
             "history",
             [
-                (j.id, (j.id, j.name, state_text(j.state), j.elapsed, Text(j.exit_code, style="" if j.exit_code == "0:0" else HOT)))
+                (j.raw, (j.id, j.name, state_text(j.state), j.elapsed, Text(j.exit_code, style="" if j.exit_code == "0:0" else HOT)))
                 for j in snapshot.history
             ],
         )
@@ -273,7 +295,7 @@ class TopApp(App):
     def sync_selection(self) -> None:
         """Follow the highlighted row of the active table; a new selection triggers a reload for its log."""
         job_id = self.cursor_job(self.tables[self.active])
-        selected = (self.jobs[job_id].workdir, job_id) if job_id else None
+        selected = (self.jobs[job_id].workdir, job_id) if job_id and not self.foreign(self.jobs[job_id]) else None
         if selected != self.selected:
             self.selected = selected
             self.load()
@@ -289,10 +311,15 @@ class TopApp(App):
     def action_reload(self) -> None:
         self.load()
 
+    def action_toggle_everyone(self) -> None:
+        self.everyone = not self.everyone
+        self.title_jobs()
+        self.load()
+
     def action_cancel_job(self) -> None:
         job_id = self.cursor_job(self.tables["jobs"])
-        if self.active != "jobs" or not job_id:
-            self.notify("Select a pending or running job first.", severity="warning")
+        if self.active != "jobs" or not job_id or self.foreign(self.jobs[job_id]):
+            self.notify("Select one of your pending or running jobs first.", severity="warning")
             return
         self.push_screen(ConfirmCancel(self.jobs[job_id]), lambda confirmed: confirmed and self.cancel(job_id))
 
@@ -307,8 +334,8 @@ class TopApp(App):
 
     def action_tunnel(self) -> None:
         job = self.jobs.get(self.cursor_job(self.tables["jobs"]))
-        if self.active != "jobs" or not job or job.state != "RUNNING":
-            self.notify("Select a running job first.", severity="warning")
+        if self.active != "jobs" or not job or job.state != "RUNNING" or self.foreign(job):
+            self.notify("Select one of your running jobs first.", severity="warning")
         elif job.id in self.tunnels:
             port, process, _ = self.tunnels.pop(job.id)
             process.terminate()
@@ -354,7 +381,4 @@ class TopApp(App):
 
 
 def main() -> None:
-    target = os.environ.get("HPC_TARGET")
-    if not target:
-        raise SystemExit("hpc-top: HPC_TARGET is not set; start the view with `bin/hpc top`, which sets it from HPC_USER")
-    TopApp(Cluster(target)).run()
+    TopApp(Cluster(target())).run()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 import socket
@@ -18,6 +19,8 @@ WASTE_AFTER = 300  # seconds of run time before a memory peak is considered mean
 # MIG profile of each resource class; mirrors `preset` in bin/hpc.
 CLASSES = {"1g.35gb": "tiny", "2g.35gb": "small", "4g.71gb": "medium", "7g.141gb": "large"}
 GRES = re.compile(r"gpu:([\w.]+):(\d+)")
+# One line per node of the partition, parsed by parse_node.
+NODES_COMMAND = f"sinfo -N -h -p {PARTITION} -O NodeList:30,StateLong:20,CPUsState:30,Memory:15,AllocMem:15,Gres:300,GresUsed:400"
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class Job:
     where: str
     workdir: str
     start: str  # actual start, or the scheduler's estimate while pending ("N/A" when unknown)
+    user: str
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,8 @@ class Record:
     allocated: dict[str, str]
     node: str
     account: str
+    # The job's own ID, as squeue shows it and as %j names the log; id is ID_TASK for a task of a job array.
+    raw: str
 
 
 @dataclass(frozen=True)
@@ -83,7 +89,7 @@ class Node:
 class Snapshot:
     jobs: tuple[Job, ...]
     nodes: tuple[Node, ...]
-    records: dict[str, Record]
+    records: dict[str, Record]  # by raw job ID
     history: tuple[Record, ...]  # the records of the jobs that have ended, most recent first
     log_path: str
     log: str
@@ -91,17 +97,21 @@ class Snapshot:
     efficiency: dict[str, str]  # seff report of the selected job, by label
 
 
-def snapshot_command(selected: tuple[str, str] | None) -> str:
-    """Shell command printing one snapshot; selected is the (workdir, job ID) whose log is tailed."""
+def snapshot_command(selected: tuple[str, str] | None, everyone: bool = False) -> str:
+    """Shell command printing one snapshot; selected is the (workdir, job ID) whose log is tailed.
+
+    The jobs listed are those of the caller, or of every user when everyone is set.
+    """
+    owner = "" if everyone else '-u "$USER" '
     parts = [
         "set -e",
         "echo @@jobs",
-        'squeue -h -u "$USER" -O "JobID:|,Name:|,State:|,TimeUsed:|,TimeLimit:|,QOS:|,ReasonList:|,WorkDir:|,StartTime:|"',
+        f'squeue -h {owner}-O "JobID:|,Name:|,State:|,TimeUsed:|,TimeLimit:|,QOS:|,ReasonList:|,WorkDir:|,StartTime:|,UserName:|"',
         "echo @@nodes",
-        f"sinfo -N -h -p {PARTITION} -O NodeList:30,StateLong:20,CPUsState:30,Memory:15,AllocMem:15,Gres:300,GresUsed:400",
+        NODES_COMMAND,
         "echo @@history",
         "sacct -X -n -P -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode,WorkDir,"
-        "Submit,Start,End,Timelimit,ReqTRES,AllocTRES,NodeList,Account",
+        "Submit,Start,End,Timelimit,ReqTRES,AllocTRES,NodeList,Account,JobIDRaw",
         "echo @@log",
     ]
     usage = "echo @@usage"
@@ -139,7 +149,7 @@ def seconds(duration: str) -> int | None:
     return ((days * 24 + hours) * 60 + minutes) * 60 + secs
 
 
-def _node(line: str) -> Node:
+def parse_node(line: str) -> Node:
     name, state, cpus, mem_total, mem_used, gres, gres_used = line.split()
     allocated, _idle, _other, total = cpus.split("/")
     used = dict(GRES.findall(gres_used))
@@ -163,20 +173,20 @@ def parse_snapshot(text: str) -> Snapshot:
         else:
             current.append(line)
 
-    jobs = tuple(Job(*line.split("|")[:9]) for line in sections["jobs"])
+    jobs = tuple(Job(*line.split("|")[:10]) for line in sections["jobs"])
     records = {}
     for line in sections["history"]:
         fields = line.split("|")
         fields[2] = fields[2].split()[0]  # "CANCELLED by 1234" -> "CANCELLED"
         fields[10:12] = tres(fields[10]), tres(fields[11])
-        records[fields[0]] = Record(*fields)
+        records[fields[-1]] = Record(*fields)
     history = [record for record in records.values() if record.state not in ACTIVE_STATES]
     # One line per job step: the peak values and the current ones.
     steps = [tuple(tres(part) for part in line.split("|")) for line in sections["usage"]]
     log_path, *log_lines = sections["log"] or [""]
     return Snapshot(
         jobs=jobs,
-        nodes=tuple(_node(line) for line in sections["nodes"]),
+        nodes=tuple(parse_node(line) for line in sections["nodes"]),
         records=records,
         history=tuple(reversed(history)),
         usage=Usage(
@@ -203,25 +213,38 @@ def free_classes(node: Node) -> dict[str, int]:
     return free
 
 
+def free_text(node: Node) -> str:
+    free = " · ".join(f"{name} {count}" for name, count in free_classes(node).items())
+    return f"free now: {free}" if free else "no free GPU slice"
+
+
+def target() -> str:
+    """The SSH target, which `bin/hpc` passes in the environment."""
+    found = os.environ.get("HPC_TARGET")
+    if not found:
+        raise SystemExit("HPC_TARGET is not set; run this through `bin/hpc`, which sets it from HPC_USER")
+    return found
+
+
 def events(previous: dict[str, str] | None, records: dict[str, Record], warned: set[str]) -> list[tuple[str, str]]:
     """Alerts as (title, message): state changes since the previous states, and jobs close to their limit.
 
     A job is added to `warned` when its time alert is raised, so that it is raised once.
     """
     found = []
-    for record in records.values():
+    for raw, record in records.items():
         label = f"{record.id} {record.name}"
-        before = (previous or {}).get(record.id)
+        before = (previous or {}).get(raw)
         if before and before != record.state:
             if record.state == "RUNNING":
                 found.append(("Job started", f"{label} is running on {record.node}"))
             elif record.state not in ACTIVE_STATES:
                 found.append((f"Job {record.state.lower()}", f"{label} ended after {record.elapsed}, exit code {record.exit_code}"))
         limit = seconds(record.limit)
-        if record.state == "RUNNING" and limit and record.id not in warned:
+        if record.state == "RUNNING" and limit and raw not in warned:
             left = limit - seconds(record.elapsed)
             if left <= (1 - TIME_WARNING) * limit:
-                warned.add(record.id)
+                warned.add(raw)
                 found.append(("Job almost out of time", f"{label} has {left // 60} min left of {record.limit}"))
     return found
 
