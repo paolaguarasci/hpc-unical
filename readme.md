@@ -35,7 +35,8 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
 | **Presets**         | `tiny`, `small`, `medium`, `large` GPU slices and `cpu`, with the cluster's default CPU and RAM |
 | **QoS handling**    | Preemptible `scavenger` by default, protected `gpu_<class>_reserved` with `--booked`            |
 | **File sync**       | `push` / `pull` over `rsync`, honouring `.gitignore`, never deleting                            |
-| **Monitoring**      | `top` (interactive view), `queue -w`, `logs -f`, `qos`, `cancel`                                |
+| **Monitoring**      | `top` (interactive view), `queue -w`, `logs -f`, `wait`, `qos`, `cancel`                        |
+| **Interactive use** | `shell` on a compute node, `tunnel` to a server run by a job, `doctor` to check the setup       |
 | **Safe by default** | A wall-clock limit is mandatory; the cluster login stays in a git-ignored `.env`                |
 
 ## Contents
@@ -54,6 +55,10 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`push` and `pull`](#push-and-pull)
     - [`logs`](#logs)
     - [`cancel`](#cancel)
+    - [`shell`](#shell)
+    - [`tunnel`](#tunnel)
+    - [`wait`](#wait)
+    - [`doctor`](#doctor)
   - [5. Resource classes](#5-resource-classes)
   - [6. QoS, bookings and preemption](#6-qos-bookings-and-preemption)
   - [7. Writing your own job](#7-writing-your-own-job)
@@ -120,12 +125,16 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc pull PATH...`                           | Fetch files from the cluster project directory                   |
 | `hpc logs [ID] [-f]`                         | Show or follow a job's output                                    |
 | `hpc cancel ID`                              | Cancel a job                                                     |
+| `hpc shell CLASS --time T [options]`         | Interactive shell on a compute node with the preset of `CLASS`   |
+| `hpc tunnel ID PORT`                         | Forward a local port to a server run by job `ID`                 |
+| `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
+| `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
 | `hpc help`                                   | Print usage                                                      |
 
 ### `submit`
 
 ```bash
-hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT
+hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
 ```
 
 | Option                   | Meaning                                                                                                                |
@@ -136,6 +145,7 @@ hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] 
 | `--requeue`              | Allow Slurm to put the job back in the queue after preemption. Use only if restarting the script is safe               |
 | `--cpus N`, `--mem SIZE` | Override the class defaults (e.g. `--mem 48G`)                                                                         |
 | `SCRIPT`                 | Path **relative to the project directory**, e.g. `job.sbatch` or `templates/demo.sbatch`                               |
+| `-- SBATCH_OPTION...`    | Everything after `--` is passed to `sbatch` unchanged, e.g. `--array`, `--job-name` or `--dependency`                  |
 
 Examples:
 
@@ -144,9 +154,10 @@ hpc submit small --time 02:00:00 train.sbatch                 # preemptible, no 
 hpc submit medium --time 12:00:00 --requeue train.sbatch      # restartable after preemption
 hpc submit large --booked --time 24:00:00 train.sbatch        # protected, needs a Large booking
 hpc submit cpu --time 00:10:00 --cpus 4 preprocess.sbatch     # CPU only
+hpc submit cpu --time 01:00:00 run.sbatch -- --array=1-50%10  # job array: 50 tasks, 10 at a time
 ```
 
-The command always adds `--partition=aiq --nodes=1 --ntasks=1` and the profile as `--gres=gpu:<profile>:1`. Resources and QoS given on the command line override any `#SBATCH` line in the script, so keep them out of your scripts.
+The command always adds `--partition=aiq --nodes=1 --ntasks=1` and the profile as `--gres=gpu:<profile>:1`. Resources and QoS given on the command line override any `#SBATCH` line in the script, so keep them out of your scripts. The options after `--` are placed after the presets and are not validated: a repeated option (for instance a second `--mem`) replaces the preset. In a job array, each task gets the resources of the class, and `%x-%j.out` gives each task a log of its own.
 
 ### `queue`
 
@@ -219,6 +230,43 @@ The lookup relies on the default naming `slurm-<id>.out` or the `%x-<id>.out` pa
 hpc cancel 4821
 ```
 
+### `shell`
+
+```bash
+hpc shell CLASS --time HH:MM:SS [--booked] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
+```
+
+Opens an interactive shell on a compute node (`srun --pty bash -l`), with the same presets, QoS rules and options as `submit`; it starts in the project directory, so run `hpc push` first. Use it to build or test an environment instead of working on the head node. The session is a Slurm job: it is preemptible unless booked, it ends at the time limit, and it holds its resources until you leave it with `exit`.
+
+```bash
+hpc shell cpu --time 00:30:00          # one core, to try a Conda environment
+hpc shell tiny --time 01:00:00         # with the smallest GPU slice
+```
+
+### `tunnel`
+
+```bash
+hpc tunnel 4821 8000     # http://localhost:8000 -> port 8000 on the node that runs job 4821
+```
+
+Forwards `localhost:PORT` to the same port of the compute node of a running job, through the head node, until Ctrl-C. The command fails when the job has no node (pending or finished) or when the local port is already in use. It does not check that a server listens on the remote port: a connection that is reset at once means that nothing does (the `t` key of `hpc top` performs that check).
+
+### `wait`
+
+```bash
+hpc wait 4821 && hpc pull results.csv     # fetch the results only if the job completed
+```
+
+Blocks until the job ends, then prints its final state, elapsed time and exit code. The exit status is 0 only when the state is `COMPLETED` (for a job array, when every task completed), so the command can gate what follows. A single SSH session is kept open and the accounting is polled every 10 seconds on the head node; if the connection drops, the command fails and can simply be run again.
+
+### `doctor`
+
+```bash
+hpc doctor
+```
+
+Checks, in order: `ssh`, `rsync` and `uv` on your machine; that the head node answers with your SSH key (which also proves that the VPN is up); that Slurm loads on the head node; that the project directory of the current directory exists on the cluster. Each line is `ok` or `FAIL` with the action to take, and the exit status is non-zero when a check fails. The cluster checks are skipped when the head node does not answer.
+
 ## 5. Resource classes
 
 The compute partition is `aiq` (nodes `ainode01`, `ainode02`). The NVIDIA H200 GPUs are exposed as MIG slices. Presets match the cluster's per-instance defaults.
@@ -273,10 +321,10 @@ Typical cycle:
 
 ```bash
 hpc push
-hpc submit small --time 04:00:00 --requeue train.sbatch
+hpc submit small --time 04:00:00 --requeue train.sbatch   # prints "Submitted batch job N"
 hpc queue
 hpc logs -f
-hpc pull checkpoints/latest.pt results.csv
+hpc wait N && hpc pull checkpoints/latest.pt results.csv
 ```
 
 ## 8. How it works
@@ -294,6 +342,8 @@ tests/test_hpc.sh       offline test suite
 ```
 
 ## 9. Troubleshooting
+
+Start with `hpc doctor`, which checks the most common causes below.
 
 | Symptom                                          | Likely cause and action                                                                               |
 | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |

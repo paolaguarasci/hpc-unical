@@ -8,7 +8,8 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/stubs" "$WORK/proj"
 export LOG="$WORK/calls.log"
 for tool in ssh rsync uv; do
-  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\n' "$tool" > "$WORK/stubs/$tool"
+  # STUB_OUT is printed and STUB_EXIT returned, to play the cluster's answer.
+  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\nprintf "%%s" "${STUB_OUT:-}"\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
   chmod +x "$WORK/stubs/$tool"
 done
 export PATH="$WORK/stubs:$PATH"
@@ -75,6 +76,12 @@ expect_logged "requeue flag" "--requeue"
 expect_logged "cpus override" "--cpus-per-task=4"
 expect_logged "mem override" "--mem=48G"
 
+run submit cpu --time 00:10:00 job.sbatch -- --array=1-50 --job-name=x
+expect_logged "extra sbatch options follow the presets" "--time=00:10:00 --array=1-50 --job-name=x job.sbatch"
+run submit cpu --time 00:10:00 job.sbatch -- --mem=8G
+expect_logged "extra option comes after the preset it overrides" "--mem=16G --time=00:10:00 --mem=8G job.sbatch"
+expect_error "submit with only extra options fails" submit cpu --time 00:10:00 -- --array=1-5
+
 expect_error "submit without --time fails" submit tiny job.sbatch
 expect_error "submit without script fails" submit tiny --time 00:05:00
 expect_error "unknown class fails" submit huge --time 00:05:00 job.sbatch
@@ -119,6 +126,49 @@ run cancel 123
 expect_logged "cancel" "scancel 123"
 expect_error "cancel rejects non-numeric" cancel abc
 expect_error "unknown command fails" bogus
+
+# --- tunnel ---
+STUB_OUT=ainode02 run tunnel 123 8000
+expect_logged "tunnel asks for the node of the job" "squeue -h -j 123 -o %N"
+expect_logged "tunnel forwards the port to the node" "ssh -N -o ExitOnForwardFailure=yes -L 8000:ainode02:8000 tester@hpcgate.unical.it"
+expect_error "tunnel needs a job with a node" tunnel 123 8000
+expect_not_logged "no tunnel without a node" "-L 8000"
+STUB_EXIT=1 expect_error "tunnel fails on an unknown job" tunnel 123 8000
+expect_error "tunnel rejects non-numeric job" tunnel abc 8000
+expect_error "tunnel rejects non-numeric port" tunnel 123 http
+expect_error "tunnel needs a port" tunnel 123
+
+# --- wait ---
+run wait 123
+expect_logged "wait allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "wait polls the accounting on the head node" "sacct -X -n -P -j 123 --format=JobID,State,Elapsed,ExitCode"
+expect_logged "wait sleeps between polls" "sleep 10"
+STUB_EXIT=1 expect_error "wait fails when the job did not complete" wait 123
+expect_error "wait rejects non-numeric" wait abc
+
+# --- shell ---
+run shell small --time 01:00:00
+expect_logged "shell allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "shell starts in the project dir" "cd projects/proj && srun --partition=aiq --qos=scavenger"
+expect_logged "shell uses the class presets" "--cpus-per-task=3 --mem=64G --time=01:00:00 --gres=gpu:2g.35gb:1 --pty bash -l"
+run shell small --booked --time 01:00:00 --mem 16G
+expect_logged "shell booked qos" "--qos=gpu_small_reserved"
+expect_logged "shell mem override" "--mem=16G"
+run shell cpu --time 00:30:00 -- --job-name=dbg
+expect_logged "shell extra srun options" "--time=00:30:00 --job-name=dbg --pty bash -l"
+expect_error "shell without --time fails" shell tiny
+expect_error "shell rejects --requeue" shell tiny --time 00:05:00 --requeue
+expect_error "shell takes no script" shell tiny --time 00:05:00 job.sbatch
+
+# --- doctor ---
+run doctor && ok "doctor succeeds on a healthy setup" || fail "doctor succeeds on a healthy setup"
+expect_logged "doctor checks the connection without prompting" "ssh -o BatchMode=yes -o ConnectTimeout=10 tester@hpcgate.unical.it true"
+expect_logged "doctor checks Slurm" "sbatch --version"
+expect_logged "doctor checks the project dir" "test -d projects/proj"
+grep -q '^ok ' "$WORK/out" && ok "doctor reports passed checks" || fail "doctor reports passed checks"
+STUB_EXIT=1 expect_error "doctor fails when the cluster is unreachable" doctor
+expect_not_logged "doctor skips the cluster checks when unreachable" "sbatch --version"
+grep -q '^FAIL ' "$WORK/out" && ok "doctor reports the failed check" || fail "doctor reports the failed check"
 
 echo
 [[ $fails -eq 0 ]] && echo "all passed" || { echo "$fails failed"; exit 1; }
