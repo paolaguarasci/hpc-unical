@@ -359,7 +359,9 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 
 ## 8. How it works
 
-- Each command opens an SSH session to `hpcgate.unical.it` and runs a login shell with `module load slurm`, so `sbatch`, `squeue`, `sacct` and `scancel` are available.
+- Each command runs over SSH on `hpcgate.unical.it` after `module load slurm`, so `sbatch`, `squeue`, `sacct` and `scancel` are available.
+- The commands share one SSH connection (`~/.ssh/hpc-*`), which stays open for 10 minutes after the last one, so only the first command pays for connecting. Sessions that need a terminal (`logs -f`, `queue -w`, `wait`, `shell`) and tunnels use a connection of their own.
+- Only `submit` and `shell` run in a login shell, because a job inherits the environment it is started from (Conda included). The other commands skip it: the login shell runs your profile on the head node a second time, which costs about one second per command.
 - The current local directory name defines the project: `~/Workspaces/university/hpc` ↔ `~/projects/hpc` on the cluster. Run commands from the same directory every time.
 - `/home` is shared by the head node and both compute nodes, so files pushed from your machine are visible to jobs wherever they run.
 - The head node is for access, editing and submission only; computation always happens through Slurm jobs.

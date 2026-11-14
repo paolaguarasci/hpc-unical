@@ -263,7 +263,8 @@ class CommandTest(unittest.TestCase):
         argv = Cluster("u1@hpcgate.unical.it").argv("squeue")
         self.assertEqual(argv[0], "ssh")
         self.assertIn("u1@hpcgate.unical.it", argv)
-        self.assertEqual(argv[-1], "bash -lc 'module load slurm && squeue'")
+        # No login shell: it would run the user's profile a second time, at about one second per command.
+        self.assertEqual(argv[-1], "module load slurm && squeue")
         self.assertNotIn("-t", argv)
 
     def test_interactive_commands_stay_off_the_shared_connection(self):

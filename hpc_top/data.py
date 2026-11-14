@@ -271,7 +271,8 @@ class Cluster:
             "-o", "ConnectTimeout=10",  # an unreachable cluster (VPN down) is reported quickly
             *connection,
             self.target,
-            "bash -lc " + shlex.quote("module load slurm && " + command),
+            # No login shell: it would run the user's profile a second time, about one second per command.
+            "module load slurm && " + command,
         ]
 
     def run(self, command: str) -> str:

@@ -93,7 +93,7 @@ expect_logged "queue squeue" "squeue -u"
 expect_logged "queue sacct" "sacct"
 expect_not_logged "queue runs once" "watch"
 run queue -w
-expect_logged "queue -w allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "queue -w allocates a terminal" "ssh -o ControlPath=none -t tester@hpcgate.unical.it"
 expect_logged "queue -w default interval" "watch -n 10 "
 expect_logged "queue -w watches squeue" "squeue -u"
 expect_logged "queue -w watches sacct" "sacct"
@@ -140,7 +140,7 @@ expect_error "tunnel needs a port" tunnel 123
 
 # --- wait ---
 run wait 123
-expect_logged "wait allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "wait allocates a terminal" "ssh -o ControlPath=none -t tester@hpcgate.unical.it"
 expect_logged "wait polls the accounting on the head node" "sacct -X -n -P -j 123 --format=JobID,State,Elapsed,ExitCode"
 expect_logged "wait sleeps between polls" "sleep 10"
 STUB_EXIT=1 expect_error "wait fails when the job did not complete" wait 123
@@ -148,7 +148,7 @@ expect_error "wait rejects non-numeric" wait abc
 
 # --- shell ---
 run shell small --time 01:00:00
-expect_logged "shell allocates a terminal" "ssh -t tester@hpcgate.unical.it"
+expect_logged "shell allocates a terminal" "ssh -o ControlPath=none -t tester@hpcgate.unical.it"
 expect_logged "shell starts in the project dir" "cd projects/proj && srun --partition=aiq --qos=scavenger"
 expect_logged "shell uses the class presets" "--cpus-per-task=3 --mem=64G --time=01:00:00 --gres=gpu:2g.35gb:1 --pty bash -l"
 run shell small --booked --time 01:00:00 --mem 16G
@@ -199,6 +199,22 @@ expect_logged "info runs seff" "seff 123"
 expect_error "info rejects non-numeric" info abc
 run free
 expect_logged "free runs the Python entry point from the repository" "uv run --project $ROOT hpc-free"
+
+# --- speed: shared connection, login shell only where a job inherits the environment ---
+run queue
+expect_logged "plain commands share one connection" "ssh -o ControlMaster=auto -o ControlPath=~/.ssh/hpc-%C -o ControlPersist=600"
+expect_logged "plain commands load Slurm" "module load slurm && squeue"
+expect_not_logged "plain commands skip the login shell" "bash -lc"
+run queue -w
+expect_not_logged "terminal sessions stay off the shared connection" "ControlMaster"
+run submit tiny --time 00:05:00 job.sbatch
+expect_logged "submit keeps the login shell" "bash -lc"
+run shell tiny --time 00:05:00
+expect_logged "shell keeps the login shell" "bash -lc"
+run push
+expect_logged "push shares the connection" "rsync -az -e ssh -o ControlMaster=auto"
+run pull results.csv
+expect_logged "pull shares the connection" "rsync -azR -e ssh -o ControlMaster=auto"
 
 echo
 [[ $fails -eq 0 ]] && echo "all passed" || { echo "$fails failed"; exit 1; }

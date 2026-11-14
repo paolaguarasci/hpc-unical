@@ -31,11 +31,30 @@ die() { echo "hpc: $*" >&2; exit 1; }
 # A job ID, or a task of a job array as ID_TASK.
 JOB_ID='^[0-9]+(_[0-9]+)?$'
 
-# Run a command on the head node in a login shell with Slurm loaded.
-# Set TTY=1 to allocate a terminal (needed to interrupt a remote `tail -f`).
-remote() {
+# Commands share one SSH connection, kept for 10 minutes after the last one, so that only the
+# first pays for connecting.
+SHARED=(-o ControlMaster=auto -o "ControlPath=~/.ssh/hpc-%C" -o ControlPersist=600
+        -o ServerAliveInterval=10 -o ServerAliveCountMax=2)
+
+# Run a command line on the head node. Set TTY=1 to allocate a terminal (needed to interrupt a
+# remote `tail -f`); a terminal session gets a connection of its own, because inside the shared
+# one it can freeze it, and with it every later command.
+on_cluster() {
+  if [[ -n ${TTY:-} ]]; then
+    ssh -o ControlPath=none -t "$TARGET" "$1"
+  else
+    ssh "${SHARED[@]}" "$TARGET" "$1"
+  fi
+}
+
+# Run a command on the head node with Slurm loaded. No login shell: it would run the user's
+# profile a second time, which costs about one second per command.
+remote() { on_cluster "module load slurm && $1"; }
+
+# The same in a login shell, for what starts a job: the job inherits that environment (Conda included).
+remote_login() {
   local cmd="module load slurm && $1" quote="'" escaped="'\\''"
-  ssh ${TTY:+-t} "$TARGET" "bash -lc '${cmd//$quote/$escaped}'"
+  on_cluster "bash -lc '${cmd//$quote/$escaped}'"
 }
 
 # Quote arguments for the remote shell.
@@ -94,7 +113,7 @@ cmd_submit() {
   if [[ $REQUEUE -eq 1 ]]; then ARGS+=(--requeue); fi
   if [[ $PUSH -eq 1 ]]; then cmd_push; fi
   # ${EXTRA[@]+...}: bash 3.2 treats an empty array as unset under `set -u`.
-  remote "cd $(printf %q "$REMOTE_DIR") && sbatch $(quote_args "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"} "${REST[0]}")"
+  remote_login "cd $(printf %q "$REMOTE_DIR") && sbatch $(quote_args "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"} "${REST[0]}")"
 }
 
 # Interactive shell on a compute node, with the same resources as a job of that class.
@@ -104,7 +123,7 @@ cmd_shell() {
   [[ $REQUEUE -eq 0 ]] || die "--requeue does not apply to an interactive shell"
   [[ ${#REST[@]} -eq 0 ]] || die "shell takes no script"
   if [[ $PUSH -eq 1 ]]; then cmd_push; fi
-  TTY=1 remote "cd $(printf %q "$REMOTE_DIR") && srun $(quote_args "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"})--pty bash -l"
+  TTY=1 remote_login "cd $(printf %q "$REMOTE_DIR") && srun $(quote_args "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"})--pty bash -l"
 }
 
 cmd_queue() {
@@ -142,15 +161,15 @@ cmd_qos() {
 }
 
 cmd_push() {
-  ssh "$TARGET" "mkdir -p $(printf %q "$REMOTE_DIR")"
-  rsync -az --exclude .git --filter=':- .gitignore' ./ "$TARGET:$REMOTE_DIR/"
+  on_cluster "mkdir -p $(printf %q "$REMOTE_DIR")"
+  rsync -az -e "ssh ${SHARED[*]}" --exclude .git --filter=':- .gitignore' ./ "$TARGET:$REMOTE_DIR/"
 }
 
 cmd_pull() {
   [[ $# -ge 1 ]] || die "usage: hpc pull PATH..."
   local sources=() p
   for p in "$@"; do sources+=("$TARGET:$REMOTE_DIR/./$p"); done
-  rsync -azR "${sources[@]}" ./
+  rsync -azR -e "ssh ${SHARED[*]}" "${sources[@]}" ./
 }
 
 cmd_logs() {
