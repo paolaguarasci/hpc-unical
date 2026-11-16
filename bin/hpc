@@ -75,7 +75,7 @@ preset() {
 # Parse CLASS and the options shared by submit and shell.
 # Sets ARGS (Slurm options), REQUEUE, PUSH, REST (positional arguments) and EXTRA (options after "--").
 resources() {
-  local class=$1 time='' booked=0
+  local class=$1 time='' booked=0 free=0
   shift
   preset "$class"
   REQUEUE=0 PUSH=0 REST=() EXTRA=()
@@ -87,6 +87,7 @@ resources() {
       --booked)  booked=1; shift ;;
       --requeue) REQUEUE=1; shift ;;
       --push)    PUSH=1; shift ;;
+      --free)    free=1; shift ;;
       # Everything after "--" goes to Slurm as is, after the presets, so it wins over them.
       --)        shift; EXTRA=("$@"); break ;;
       -*)        die "unknown option $1" ;;
@@ -94,6 +95,8 @@ resources() {
     esac
   done
   [[ -n $time ]] || die "--time is required"
+  # Refuse now rather than queue behind a busy class; the check runs before anything is pushed.
+  if [[ $free -eq 1 ]]; then HPC_TARGET=$TARGET uv run --project "$ROOT" hpc-free "$class"; fi
 
   local qos=scavenger
   if [[ $booked -eq 1 ]]; then
@@ -106,7 +109,7 @@ resources() {
 }
 
 cmd_submit() {
-  [[ $# -ge 1 ]] || die "usage: hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--push] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]"
+  [[ $# -ge 1 ]] || die "usage: hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--push] [--free] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]"
   resources "$@"
   [[ ${#REST[@]} -ge 1 ]] || die "missing SCRIPT"
   [[ ${#REST[@]} -eq 1 ]] || die "only one script allowed"
@@ -118,7 +121,7 @@ cmd_submit() {
 
 # Interactive shell on a compute node, with the same resources as a job of that class.
 cmd_shell() {
-  [[ $# -ge 1 ]] || die "usage: hpc shell CLASS --time HH:MM:SS [--booked] [--push] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]"
+  [[ $# -ge 1 ]] || die "usage: hpc shell CLASS --time HH:MM:SS [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]"
   resources "$@"
   [[ $REQUEUE -eq 0 ]] || die "--requeue does not apply to an interactive shell"
   [[ ${#REST[@]} -eq 0 ]] || die "shell takes no script"
@@ -129,7 +132,7 @@ cmd_shell() {
 # Push, submit, wait and pull in one command; the exit status is that of the job (see wait).
 # --pull PATH (repeatable) names what to fetch when the job COMPLETED.
 cmd_run() {
-  [[ $# -ge 1 ]] || die "usage: hpc run CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]"
+  [[ $# -ge 1 ]] || die "usage: hpc run CLASS --time HH:MM:SS [--booked] [--requeue] [--free] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]"
   local class=$1 args=() pull=() out
   shift
   while [[ $# -gt 0 ]]; do
@@ -264,10 +267,11 @@ cmd_cancel() {
 usage() {
   cat <<'EOF'
 usage: hpc COMMAND [ARGS]
-  submit CLASS --time T [--booked] [--requeue] [--push] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
+  submit CLASS --time T [--booked] [--requeue] [--push] [--free] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
                   submit SCRIPT from ~/projects/<current dir name>; CLASS: tiny|small|medium|large|cpu;
-                  options after -- go to sbatch as they are (e.g. -- --array=1-50); --push syncs first
-  run CLASS --time T [--booked] [--requeue] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]
+                  options after -- go to sbatch as they are (e.g. -- --array=1-50); --push syncs first;
+                  --free fails at once unless a GPU slice of CLASS is free now (needs uv)
+  run CLASS --time T [--booked] [--requeue] [--free] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]
                   push, submit, wait for the job and pull each --pull PATH if it COMPLETED
   queue [-w [S]]  your jobs and the last day of job history; -w refreshes every S seconds (default 10)
   top             interactive view of the cluster and of your jobs (needs uv on this machine)
@@ -276,7 +280,7 @@ usage: hpc COMMAND [ARGS]
   pull PATH...    fetch files from the cluster project directory
   logs [ID] [-f]  show (or follow) the latest *.out, or the one matching job ID
   cancel ID       cancel a job
-  shell CLASS --time T [--booked] [--push] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
+  shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
   wait ID         block until job ID ends; exit 0 only if it (every task, for an array) COMPLETED

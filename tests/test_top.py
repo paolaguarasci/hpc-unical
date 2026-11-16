@@ -4,13 +4,14 @@ import socket
 import subprocess
 import threading
 import unittest
+from dataclasses import replace
 
 from textual.widgets import DataTable
 from textual.worker import WorkerCancelled
 
 from hpc_top.app import TopApp
 from hpc_top.data import NODES_COMMAND, Cluster, events, free_classes, megabytes, parse_snapshot, seconds, snapshot_command
-from hpc_top.free import report
+from hpc_top.free import report, require_free
 from hpc_top.widgets import DetailsPanel, NodePanel, bar, details_text, spark
 
 # Output captured from the real cluster on 2026-11-13, with the login replaced.
@@ -245,6 +246,21 @@ class CommandTest(unittest.TestCase):
             "ainode01  free now: tiny 4 · small 4 · medium 4 · large 4\n"
             "ainode02  free now: tiny 2 · small 4 · medium 2 · large 3",
         )
+
+    def test_require_free_passes_when_a_node_has_the_class_free(self):
+        require_free(parse_snapshot(SNAPSHOT).nodes, "large")
+
+    def test_require_free_fails_with_the_report_when_no_node_has_it(self):
+        nodes = parse_snapshot(SNAPSHOT).nodes
+        full = tuple(replace(node, gpus={profile: (total, total) for profile, (_, total) in node.gpus.items()}) for node in nodes)
+        with self.assertRaises(SystemExit) as raised:
+            require_free(full, "small")
+        self.assertIn("no free small slice", str(raised.exception))
+        self.assertIn("ainode01  no free GPU slice", str(raised.exception))
+
+    def test_require_free_rejects_the_cpu_class(self):
+        with self.assertRaises(SystemExit):
+            require_free(parse_snapshot(SNAPSHOT).nodes, "cpu")
 
     def test_snapshot_tails_the_log_of_the_selected_job(self):
         command = snapshot_command(("/home/u1/my project", "10183"))

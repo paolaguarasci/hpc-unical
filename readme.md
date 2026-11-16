@@ -151,6 +151,7 @@ hpc submit CLASS --time HH:MM:SS [--booked] [--requeue] [--push] [--cpus N] [--m
 | `--booked`               | Use the protected QoS `gpu_<class>_reserved` (requires an active booking). Not available for `cpu`                     |
 | `--requeue`              | Allow Slurm to put the job back in the queue after preemption. Use only if restarting the script is safe               |
 | `--push`                 | Run `hpc push` first, so that the job cannot start on a stale copy of the project                                      |
+| `--free`                 | Fail at once, before pushing, unless a GPU slice of `CLASS` is free now (requires `uv`; not for `cpu`)                 |
 | `--cpus N`, `--mem SIZE` | Override the class defaults (e.g. `--mem 48G`)                                                                         |
 | `SCRIPT`                 | Path **relative to the project directory**, e.g. `job.sbatch` or `templates/demo.sbatch`                               |
 | `-- SBATCH_OPTION...`    | Everything after `--` is passed to `sbatch` unchanged, e.g. `--array`, `--job-name` or `--dependency`                  |
@@ -308,7 +309,7 @@ hpc free
 # ainode02  free now: tiny 2 · small 4 · medium 2 · large 3
 ```
 
-Lists, for each node, the classes that have a free GPU slice right now and how many, to choose a class before submitting. It considers GPU slices only, not free cores, memory or QoS limits. It reuses the code of `hpc top`, so it requires [`uv`](https://docs.astral.sh/uv/).
+Lists, for each node, the classes that have a free GPU slice right now and how many, to choose a class before submitting. It considers GPU slices only, not free cores, memory or QoS limits. The same check is available as `--free` on `submit`, `run` and `shell`, which refuse to start when the class has no free slice. It reuses the code of `hpc top`, so it requires [`uv`](https://docs.astral.sh/uv/).
 
 ## 5. Resource classes
 

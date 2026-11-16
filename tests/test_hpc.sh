@@ -215,6 +215,19 @@ STUB_OUT="no job here" expect_error "run fails when no job ID is returned" run t
 STUB_OUT="Submitted batch job 77" STUB_EXIT=1 expect_error "run fails when submission fails" run tiny --time 00:05:00 job.sbatch
 expect_error "run requires --time" run tiny job.sbatch
 
+# --- --free: require a free slice of the class before submitting ---
+run submit small --free --time 00:05:00 job.sbatch
+expect_logged "--free asks the Python entry point about the class" "uv run --project $ROOT hpc-free small"
+expect_logged "--free still submits when the class is free" "sbatch --partition=aiq"
+STUB_EXIT=1 expect_error "--free refuses to submit when uv reports no free slice" submit small --free --time 00:05:00 job.sbatch
+STUB_EXIT=1 run submit small --free --time 00:05:00 job.sbatch
+expect_not_logged "--free does not reach sbatch when refused" "sbatch"
+expect_not_logged "--free does not push when refused" "rsync"
+run submit small --time 00:05:00 job.sbatch
+expect_not_logged "without --free uv is not run" "hpc-free"
+STUB_OUT="Submitted batch job 77" run run small --free --time 00:05:00 job.sbatch
+expect_logged "run accepts --free" "hpc-free small"
+
 # --- speed: shared connection, login shell only where a job inherits the environment ---
 run queue
 expect_logged "plain commands share one connection" "ssh -o ControlMaster=auto -o ControlPath=~/.ssh/hpc-%C -o ControlPersist=600"
