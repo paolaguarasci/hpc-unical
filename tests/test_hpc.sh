@@ -200,6 +200,21 @@ expect_error "info rejects non-numeric" info abc
 run free
 expect_logged "free runs the Python entry point from the repository" "uv run --project $ROOT hpc-free"
 
+# --- run: push, submit, wait, pull ---
+STUB_OUT="Submitted batch job 77" run run tiny --time 00:05:00 --pull out.csv --pull logs/ job.sbatch
+expect_logged "run syncs the project first" "rsync -az -e"
+expect_logged "run submits" "sbatch --partition=aiq --qos=scavenger"
+expect_logged "run waits for the parsed job ID" "sacct -X -n -P -j 77 --format=JobID,State,Elapsed,ExitCode"
+expect_logged "run pulls the first path" "tester@hpcgate.unical.it:projects/proj/./out.csv"
+expect_logged "run pulls the second path" "tester@hpcgate.unical.it:projects/proj/./logs/"
+expect_not_logged "run keeps --pull away from sbatch" "--pull"
+STUB_OUT="Submitted batch job 77" run run cpu --time 00:10:00 job.sbatch -- --array=1-3
+expect_logged "run passes options after -- to sbatch" "--array=1-3 job.sbatch"
+expect_logged "run waits for the array" "sacct -X -n -P -j 77"
+STUB_OUT="no job here" expect_error "run fails when no job ID is returned" run tiny --time 00:05:00 job.sbatch
+STUB_OUT="Submitted batch job 77" STUB_EXIT=1 expect_error "run fails when submission fails" run tiny --time 00:05:00 job.sbatch
+expect_error "run requires --time" run tiny job.sbatch
+
 # --- speed: shared connection, login shell only where a job inherits the environment ---
 run queue
 expect_logged "plain commands share one connection" "ssh -o ControlMaster=auto -o ControlPath=~/.ssh/hpc-%C -o ControlPersist=600"

@@ -126,6 +126,27 @@ cmd_shell() {
   TTY=1 remote_login "cd $(printf %q "$REMOTE_DIR") && srun $(quote_args "${ARGS[@]}" ${EXTRA[@]+"${EXTRA[@]}"})--pty bash -l"
 }
 
+# Push, submit, wait and pull in one command; the exit status is that of the job (see wait).
+# --pull PATH (repeatable) names what to fetch when the job COMPLETED.
+cmd_run() {
+  [[ $# -ge 1 ]] || die "usage: hpc run CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]"
+  local class=$1 args=() pull=() out
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --pull) pull+=("${2:?--pull needs a value}"); shift 2 ;;
+      --)     args+=("$@"); break ;;
+      *)      args+=("$1"); shift ;;
+    esac
+  done
+  out=$(cmd_submit "$class" --push ${args[@]+"${args[@]}"})
+  echo "$out"
+  [[ $out =~ Submitted\ batch\ job\ ([0-9]+) ]] || die "cannot read the job ID from the sbatch output"
+  local id=${BASH_REMATCH[1]}
+  cmd_wait "$id" || die "job $id did not complete (see: hpc logs $id)"
+  if [[ ${#pull[@]} -gt 0 ]]; then cmd_pull "${pull[@]}"; fi
+}
+
 cmd_queue() {
   local query='squeue -u "$USER" -o "%.10i %.24j %.10T %.10M %.24q %R"; sacct -X -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode'
   case ${1:-} in
@@ -246,6 +267,8 @@ usage: hpc COMMAND [ARGS]
   submit CLASS --time T [--booked] [--requeue] [--push] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]
                   submit SCRIPT from ~/projects/<current dir name>; CLASS: tiny|small|medium|large|cpu;
                   options after -- go to sbatch as they are (e.g. -- --array=1-50); --push syncs first
+  run CLASS --time T [--booked] [--requeue] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]
+                  push, submit, wait for the job and pull each --pull PATH if it COMPLETED
   queue [-w [S]]  your jobs and the last day of job history; -w refreshes every S seconds (default 10)
   top             interactive view of the cluster and of your jobs (needs uv on this machine)
   qos             QoS associations granted to your account
@@ -266,6 +289,7 @@ EOF
 }
 
 case ${1:-help} in
+  run)    shift; cmd_run "$@" ;;
   submit) shift; cmd_submit "$@" ;;
   queue)  shift; cmd_queue "$@" ;;
   top)    cmd_top ;;

@@ -120,6 +120,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | Command                                      | Purpose                                                          |
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | `hpc submit CLASS --time T [options] SCRIPT` | Submit a batch script with the preset of `CLASS`                 |
+| `hpc run CLASS --time T [options] SCRIPT`    | Push, submit, wait and pull the results in one command           |
 | `hpc queue [-w [SECONDS]]`                   | Your pending and running jobs, plus the last 24 hours of history |
 | `hpc top`                                    | Interactive view of the cluster and of your jobs (requires `uv`) |
 | `hpc qos`                                    | QoS associations granted to your account                         |
@@ -166,6 +167,18 @@ hpc submit small --time 02:00:00 --push train.sbatch          # sync the project
 ```
 
 The command always adds `--partition=aiq --nodes=1 --ntasks=1` and the profile as `--gres=gpu:<profile>:1`. Resources and QoS given on the command line override any `#SBATCH` line in the script, so keep them out of your scripts. The options after `--` are placed after the presets and are not validated: a repeated option (for instance a second `--mem`) replaces the preset. In a job array, each task gets the resources of the class, and `%x-%j.out` gives each task a log of its own.
+
+### `run`
+
+```bash
+hpc run CLASS --time HH:MM:SS [--booked] [--requeue] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]
+```
+
+Runs `hpc submit --push`, then `hpc wait` on the job, then `hpc pull` for each `--pull PATH` (repeatable). It accepts the options of `submit`, except `--push`, which is always on. The results are fetched only if the job completed; otherwise the command fails and names `hpc logs ID`. The exit status is therefore that of `hpc wait`. For a job array, the command waits for every task.
+
+```bash
+hpc run small --time 02:00:00 --pull results.csv --pull plots/ train.sbatch
+```
 
 ### `queue`
 
