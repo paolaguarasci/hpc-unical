@@ -150,6 +150,34 @@ cmd_run() {
   if [[ ${#pull[@]} -gt 0 ]]; then cmd_pull "${pull[@]}"; fi
 }
 
+# One array task per line of PARAMS: tasks read their line with
+# sed -n "${SLURM_ARRAY_TASK_ID}p" "$HPC_SWEEP_FILE". --parallel N caps the tasks running at once.
+cmd_sweep() {
+  [[ $# -ge 1 ]] || die "usage: hpc sweep CLASS --time HH:MM:SS --params FILE [--parallel N] [--booked] [--requeue] [--free] [--cpus N] [--mem SIZE] SCRIPT [-- SBATCH_OPTION...]"
+  local class=$1 args=() extra=() params='' parallel=''
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --params)   params=${2:?--params needs a value}; shift 2 ;;
+      --parallel) parallel=${2:?--parallel needs a value}; shift 2 ;;
+      --)         shift; extra=("$@"); break ;;
+      *)          args+=("$1"); shift ;;
+    esac
+  done
+  [[ -n $params ]] || die "--params is required"
+  [[ -s $params ]] || die "parameter file '$params' is missing or empty"
+  [[ -z $parallel || $parallel =~ ^[0-9]+$ ]] || die "--parallel needs a number"
+  local tasks
+  tasks=$(grep -c '' "$params")
+  cmd_submit "$class" --push ${args[@]+"${args[@]}"} -- "--array=1-$tasks${parallel:+%$parallel}" \
+    "--export=ALL,HPC_SWEEP_FILE=$params" ${extra[@]+"${extra[@]}"}
+}
+
+# Running and pending jobs, and the last job of the week, in one line.
+cmd_status() {
+  remote 'r=$(squeue -u "$USER" -h -t RUNNING | wc -l); p=$(squeue -u "$USER" -h -t PENDING | wc -l); l=$(sacct -X -n -P -u "$USER" -S now-7days --format=JobID,JobName,State,Elapsed | tail -n 1); echo "running $r | pending $p | last: ${l:-none}"'
+}
+
 cmd_queue() {
   local query='squeue -u "$USER" -o "%.10i %.24j %.10T %.10M %.24q %R"; sacct -X -S now-1days --format=JobID,JobName,State,Elapsed,ExitCode'
   case ${1:-} in
@@ -186,7 +214,7 @@ cmd_qos() {
 
 cmd_push() {
   on_cluster "mkdir -p $(printf %q "$REMOTE_DIR")"
-  rsync -az -e "ssh ${SHARED[*]}" --exclude .git --filter=':- .gitignore' ./ "$TARGET:$REMOTE_DIR/"
+  rsync -az -e "ssh ${SHARED[*]}" --exclude .git --filter=':- .gitignore' --filter=':- .hpcignore' ./ "$TARGET:$REMOTE_DIR/"
 }
 
 cmd_pull() {
@@ -231,10 +259,14 @@ cmd_tunnel() {
 cmd_wait() {
   [[ ${1:-} =~ $JOB_ID ]] || die "usage: hpc wait JOB_ID"
   local query="sacct -X -n -P -j $1 --format=JobID,State,Elapsed,ExitCode"
-  local active='\|(PENDING|RUNNING|REQUEUED|SUSPENDED|COMPLETING|RESIZING)\|'
+  local active='\|(PENDING|RUNNING|REQUEUED|SUSPENDED|COMPLETING|RESIZING)\|' status=0 word=completed
   TTY=1 remote "s=\$($query); [ -n \"\$s\" ] || { echo \"hpc: job $1 not found\" >&2; exit 1; }
 while echo \"\$s\" | grep -qE \"$active\"; do sleep 10; s=\$($query); done
-echo \"\$s\"; ! echo \"\$s\" | grep -qv \"|COMPLETED|\""
+echo \"\$s\"; ! echo \"\$s\" | grep -qv \"|COMPLETED|\"" || status=$?
+  [[ $status -eq 0 ]] || word="did not complete"
+  # Desktop notification where macOS provides one, so a long job can be left running unattended.
+  if command -v osascript >/dev/null; then osascript -e "display notification \"job $1 $word\" with title \"hpc\""; fi
+  return $status
 }
 
 # Check, step by step, what the other commands need; the cluster checks are skipped when it is unreachable.
@@ -273,6 +305,9 @@ usage: hpc COMMAND [ARGS]
                   --free fails at once unless a GPU slice of CLASS is free now (needs uv)
   run CLASS --time T [--booked] [--requeue] [--free] [--cpus N] [--mem SIZE] [--pull PATH]... SCRIPT [-- SBATCH_OPTION...]
                   push, submit, wait for the job and pull each --pull PATH if it COMPLETED
+  sweep CLASS --time T --params FILE [--parallel N] [options] SCRIPT [-- SBATCH_OPTION...]
+                  job array with one task per line of FILE; a task reads its line from $HPC_SWEEP_FILE
+  status          running and pending jobs and the last job of the week, in one line
   queue [-w [S]]  your jobs and the last day of job history; -w refreshes every S seconds (default 10)
   top             interactive view of the cluster and of your jobs (needs uv on this machine)
   qos             QoS associations granted to your account
@@ -287,24 +322,27 @@ usage: hpc COMMAND [ARGS]
   doctor          check tools, VPN/SSH access, Slurm and the remote project directory
   info ID         CPU and memory efficiency of a finished job (seff)
   free            classes with a free GPU slice right now, per node (needs uv on this machine)
+aliases: q = queue, l = logs, w = wait, c = cancel
 job IDs: a task of a job array is written ID_TASK (e.g. 10211_2) in logs, cancel, wait, tunnel and info
 environment: HPC_USER (required) is your cluster login
 EOF
 }
 
 case ${1:-help} in
+  sweep)  shift; cmd_sweep "$@" ;;
+  status) cmd_status ;;
   run)    shift; cmd_run "$@" ;;
   submit) shift; cmd_submit "$@" ;;
-  queue)  shift; cmd_queue "$@" ;;
+  queue|q) shift; cmd_queue "$@" ;;
   top)    cmd_top ;;
   qos)    cmd_qos ;;
   push)   cmd_push ;;
   pull)   shift; cmd_pull "$@" ;;
-  logs)   shift; cmd_logs "$@" ;;
-  cancel) shift; cmd_cancel "$@" ;;
+  logs|l) shift; cmd_logs "$@" ;;
+  cancel|c) shift; cmd_cancel "$@" ;;
   shell)  shift; cmd_shell "$@" ;;
   tunnel) shift; cmd_tunnel "$@" ;;
-  wait)   shift; cmd_wait "$@" ;;
+  wait|w) shift; cmd_wait "$@" ;;
   doctor) cmd_doctor ;;
   info)   shift; cmd_info "$@" ;;
   free)   cmd_free ;;

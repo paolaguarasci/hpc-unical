@@ -7,7 +7,7 @@ WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/stubs" "$WORK/proj"
 export LOG="$WORK/calls.log"
-for tool in ssh rsync uv; do
+for tool in ssh rsync uv osascript; do
   # STUB_OUT is printed and STUB_EXIT returned, to play the cluster's answer.
   printf '#!/bin/sh\necho "%s $*" >> "$LOG"\nprintf "%%s" "${STUB_OUT:-}"\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
   chmod +x "$WORK/stubs/$tool"
@@ -227,6 +227,46 @@ run submit small --time 00:05:00 job.sbatch
 expect_not_logged "without --free uv is not run" "hpc-free"
 STUB_OUT="Submitted batch job 77" run run small --free --time 00:05:00 job.sbatch
 expect_logged "run accepts --free" "hpc-free small"
+
+# --- notifications at the end of wait (and so of run) ---
+run wait 123
+expect_logged "wait notifies on the desktop" "osascript -e display notification \"job 123 completed\" with title \"hpc\""
+STUB_EXIT=1 run wait 123
+expect_logged "wait notifies a failure too" "job 123 did not complete"
+
+# --- sweep: one array task per line of the parameter file ---
+printf 'a\nb\nc\n' > "$WORK/proj/params.txt"
+STUB_OUT="Submitted batch job 5" run sweep tiny --time 00:05:00 --params params.txt job.sbatch
+expect_logged "sweep pushes first" "rsync -az -e"
+expect_logged "sweep sizes the array on the lines of the file" "--array=1-3"
+expect_logged "sweep tells the job where the parameters are" "--export=ALL\\,HPC_SWEEP_FILE=params.txt job.sbatch"
+STUB_OUT="Submitted batch job 5" run sweep tiny --time 00:05:00 --params params.txt --parallel 2 job.sbatch -- --job-name=x
+expect_logged "sweep limits the tasks running at once" "--array=1-3%2"
+expect_logged "sweep keeps the options after --" "--job-name=x"
+expect_error "sweep requires --params" sweep tiny --time 00:05:00 job.sbatch
+expect_error "sweep rejects a missing parameter file" sweep tiny --time 00:05:00 --params nope.txt job.sbatch
+: > "$WORK/proj/empty.txt"
+expect_error "sweep rejects an empty parameter file" sweep tiny --time 00:05:00 --params empty.txt job.sbatch
+
+# --- status ---
+STUB_OUT="running 1" run status
+expect_logged "status counts running jobs" "squeue -u \"\$USER\" -h -t RUNNING"
+expect_logged "status counts pending jobs" "-t PENDING"
+expect_logged "status shows the last job" "sacct -X -n -P"
+
+# --- short aliases ---
+run q
+expect_logged "q is queue" "squeue"
+run l
+expect_logged "l is logs" "tail -n 50"
+run w 123
+expect_logged "w is wait" "sacct -X -n -P -j 123"
+run c 123
+expect_logged "c is cancel" "scancel 123"
+
+# --- push honours .hpcignore ---
+run push
+expect_logged "push excludes what .hpcignore lists" "--filter=:- .hpcignore"
 
 # --- speed: shared connection, login shell only where a job inherits the environment ---
 run queue

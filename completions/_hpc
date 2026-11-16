@@ -1,0 +1,44 @@
+#compdef hpc
+# zsh completion for hpc: subcommands, resource classes and the IDs of your jobs.
+
+_hpc_jobs() {
+  local -a ids
+  # The first column of `hpc queue` is a job ID (or ID_TASK) in the squeue and sacct parts.
+  ids=(${(u)${(f)"$(hpc queue 2>/dev/null | awk '$1 ~ /^[0-9]+(_[0-9]+)?$/ {print $1}')"}})
+  _describe 'job' ids
+}
+
+_hpc() {
+  local -a commands
+  commands=(
+    'run:push, submit, wait and pull'
+    'sweep:job array over the lines of a parameter file'
+    'submit:submit a batch script'
+    'status:running and pending jobs, last job'
+    'queue:your jobs and recent history'
+    'top:interactive view of the cluster'
+    'qos:QoS associations of your account'
+    'push:sync the current directory'
+    'pull:fetch files from the cluster'
+    'logs:show or follow a job output'
+    'cancel:cancel a job'
+    'shell:interactive shell on a compute node'
+    'tunnel:forward a local port to a job'
+    'wait:block until a job ends'
+    'doctor:check tools, VPN, SSH and Slurm'
+    'info:CPU and memory efficiency of a job'
+    'free:classes with a free GPU slice'
+    'q:alias of queue' 'l:alias of logs' 'w:alias of wait' 'c:alias of cancel'
+  )
+  if (( CURRENT == 2 )); then
+    _describe 'command' commands
+    return
+  fi
+  case $words[2] in
+    run|sweep|submit|shell) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
+    logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;
+    pull) _files ;;
+  esac
+}
+
+_hpc "$@"

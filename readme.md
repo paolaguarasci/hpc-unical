@@ -121,6 +121,8 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | -------------------------------------------- | ---------------------------------------------------------------- |
 | `hpc submit CLASS --time T [options] SCRIPT` | Submit a batch script with the preset of `CLASS`                 |
 | `hpc run CLASS --time T [options] SCRIPT`    | Push, submit, wait and pull the results in one command           |
+| `hpc sweep CLASS --time T --params FILE ...` | Job array with one task per line of a parameter file             |
+| `hpc status`                                 | Running and pending jobs and the last job, in one line           |
 | `hpc queue [-w [SECONDS]]`                   | Your pending and running jobs, plus the last 24 hours of history |
 | `hpc top`                                    | Interactive view of the cluster and of your jobs (requires `uv`) |
 | `hpc qos`                                    | QoS associations granted to your account                         |
@@ -135,6 +137,8 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
 | `hpc free`                                   | Classes with a free GPU slice right now (requires `uv`)          |
 | `hpc help`                                   | Print usage                                                      |
+
+`q`, `l`, `w` and `c` are short for `queue`, `logs`, `wait` and `cancel`. `hpc wait` (and so `hpc run`) also posts a macOS notification when the job ends, if `osascript` is available.
 
 Wherever a command takes a job ID, a task of a job array is written `ID_TASK`, for instance `10211_2`.
 
@@ -180,6 +184,27 @@ Runs `hpc submit --push`, then `hpc wait` on the job, then `hpc pull` for each `
 ```bash
 hpc run small --time 02:00:00 --pull results.csv --pull plots/ train.sbatch
 ```
+
+### `sweep`
+
+```bash
+hpc sweep CLASS --time HH:MM:SS --params FILE [--parallel N] [options] SCRIPT [-- SBATCH_OPTION...]
+```
+
+Pushes the project and submits `SCRIPT` as a job array with one task per line of `FILE` (path relative to the project directory), accepting the options of `submit`. `--parallel N` limits the tasks running at once (`--array=1-<lines>%N`); keep it low on the shared slices. Each task finds the path of the file in `HPC_SWEEP_FILE` and reads its own line:
+
+```bash
+params=$(sed -n "${SLURM_ARRAY_TASK_ID}p" "$HPC_SWEEP_FILE")
+python train.py $params
+```
+
+### `status`
+
+```bash
+hpc status      # running 1 | pending 0 | last: 10370|demo|COMPLETED|00:00:09
+```
+
+One SSH call: the jobs of your account that are running or pending, and the last job of the past seven days. For free GPU slices use `hpc free`.
 
 ### `queue`
 
@@ -227,6 +252,8 @@ The view is a [Textual](https://textual.textualize.io/) application (`hpc_top/`)
 Shows the QoS names your account is associated with. After a booking starts, allow up to five minutes for the new QoS to appear.
 
 ### `push` and `pull`
+
+Files matched by a `.hpcignore` in the project directory (same syntax as `.gitignore`) are not sent, in addition to those ignored by Git. `push` never deletes anything on the cluster, so that job outputs are safe.
 
 ```bash
 hpc push                         # ./  ->  ~/projects/<current directory name>/
@@ -310,6 +337,15 @@ hpc free
 ```
 
 Lists, for each node, the classes that have a free GPU slice right now and how many, to choose a class before submitting. It considers GPU slices only, not free cores, memory or QoS limits. The same check is available as `--free` on `submit`, `run` and `shell`, which refuse to start when the class has no free slice. It reuses the code of `hpc top`, so it requires [`uv`](https://docs.astral.sh/uv/).
+
+### Zsh completion
+
+```bash
+mkdir -p ~/.zfunc && ln -s "$PWD/completions/_hpc" ~/.zfunc/_hpc
+# in ~/.zshrc, before compinit:  fpath=(~/.zfunc $fpath)
+```
+
+Completes subcommands, classes and the IDs of your jobs (the latter asks the cluster, so it takes about a second).
 
 ## 5. Resource classes
 
