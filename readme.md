@@ -49,6 +49,9 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
   - [3. Quick start](#3-quick-start)
   - [4. Command reference](#4-command-reference)
     - [`submit`](#submit)
+    - [`run`](#run)
+    - [`sweep`](#sweep)
+    - [`status`](#status)
     - [`queue`](#queue)
     - [`top`](#top)
     - [`qos`](#qos)
@@ -64,13 +67,23 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`doctor`](#doctor)
     - [`info`](#info)
     - [`free`](#free)
+    - [Zsh completion](#zsh-completion)
   - [5. Resource classes](#5-resource-classes)
   - [6. QoS, bookings and preemption](#6-qos-bookings-and-preemption)
   - [7. Writing your own job](#7-writing-your-own-job)
-  - [8. Interactive services](#8-interactive-services-jupyter-comfyui-and-ollama)
+  - [8. Interactive services: Jupyter, ComfyUI and Ollama](#8-interactive-services-jupyter-comfyui-and-ollama)
+    - [One-time setup](#one-time-setup)
+    - [Starting and stopping](#starting-and-stopping)
+    - [Jupyter](#jupyter)
+    - [Ollama](#ollama)
+    - [ComfyUI](#comfyui)
+      - [From the "Missing models" panel to the download](#from-the-missing-models-panel-to-the-download)
+    - [Security](#security)
+    - [Problems](#problems)
   - [9. How it works](#9-how-it-works)
   - [10. Troubleshooting](#10-troubleshooting)
   - [11. Tests](#11-tests)
+  - [Public page](#public-page)
   - [Before you leave](#before-you-leave)
   - [License](#license)
 
@@ -121,31 +134,31 @@ The demo prints the job ID, the home directory, the working directory, the compu
 
 ## 4. Command reference
 
-| Command                                      | Purpose                                                          |
-| -------------------------------------------- | ---------------------------------------------------------------- |
-| `hpc submit CLASS --time T [options] SCRIPT` | Submit a batch script with the preset of `CLASS`                 |
-| `hpc run CLASS --time T [options] SCRIPT`    | Push, submit, wait and pull the results in one command           |
-| `hpc sweep CLASS --time T --params FILE ...` | Job array with one task per line of a parameter file             |
-| `hpc status`                                 | Running and pending jobs and the last job, in one line           |
-| `hpc queue [-w [SECONDS]]`                   | Your pending and running jobs, plus the last 24 hours of history |
-| `hpc top`                                    | Interactive view of the cluster and of your jobs (requires `uv`) |
-| `hpc qos`                                    | QoS associations granted to your account                         |
-| `hpc push`                                   | Sync the current directory to the cluster                        |
-| `hpc pull PATH...`                           | Fetch files from the cluster project directory                   |
-| `hpc logs [ID] [-f]`                         | Show or follow a job's output                                    |
-| `hpc cancel ID`                              | Cancel a job                                                     |
-| `hpc shell CLASS --time T [options]`         | Interactive shell on a compute node with the preset of `CLASS`   |
-| `hpc tunnel ID PORT`                         | Forward a local port to a server run by job `ID`                 |
-| `hpc serve CLASS --time T SERVICE`           | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost |
-| `hpc setup [ollama] [comfy]`                 | Check ollama and ComfyUI on a cpu node and install what is missing |
-| `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job |
-| `hpc model list [comfy\|ollama]`              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
-| `hpc model template NAME`, `hpc model comfy --workflow FILE` | Download the models that a ComfyUI template or workflow file declares |
-| `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
-| `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
-| `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
-| `hpc free`                                   | Classes with a free GPU slice right now (requires `uv`)          |
-| `hpc help`                                   | Print usage                                                      |
+| Command                                                       | Purpose                                                                                     |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `hpc submit CLASS --time T [options] SCRIPT`                  | Submit a batch script with the preset of `CLASS`                                            |
+| `hpc run CLASS --time T [options] SCRIPT`                     | Push, submit, wait and pull the results in one command                                      |
+| `hpc sweep CLASS --time T --params FILE ...`                  | Job array with one task per line of a parameter file                                        |
+| `hpc status`                                                  | Running and pending jobs and the last job, in one line                                      |
+| `hpc queue [-w [SECONDS]]`                                    | Your pending and running jobs, plus the last 24 hours of history                            |
+| `hpc top`                                                     | Interactive view of the cluster and of your jobs (requires `uv`)                            |
+| `hpc qos`                                                     | QoS associations granted to your account                                                    |
+| `hpc push`                                                    | Sync the current directory to the cluster                                                   |
+| `hpc pull PATH...`                                            | Fetch files from the cluster project directory                                              |
+| `hpc logs [ID] [-f]`                                          | Show or follow a job's output                                                               |
+| `hpc cancel ID`                                               | Cancel a job                                                                                |
+| `hpc shell CLASS --time T [options]`                          | Interactive shell on a compute node with the preset of `CLASS`                              |
+| `hpc tunnel ID PORT`                                          | Forward a local port to a server run by job `ID`                                            |
+| `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost                    |
+| `hpc setup [ollama] [comfy]`                                  | Check ollama and ComfyUI on a cpu node and install what is missing                          |
+| `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job                                                |
+| `hpc model list [comfy\|ollama]`                              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
+| `hpc model template NAME`, `hpc model comfy --workflow FILE`  | Download the models that a ComfyUI template or workflow file declares                       |
+| `hpc wait ID`                                                 | Block until job `ID` ends; succeed only if it completed                                     |
+| `hpc doctor`                                                  | Check tools, VPN and SSH access, Slurm and the project directory                            |
+| `hpc info ID`                                                 | CPU and memory efficiency of a finished job                                                 |
+| `hpc free`                                                    | Classes with a free GPU slice right now (requires `uv`)                                     |
+| `hpc help`                                                    | Print usage                                                                                 |
 
 `q`, `l`, `w` and `c` are short for `queue`, `logs`, `wait` and `cancel`. `hpc wait` (and so `hpc run`) also posts a macOS notification when the job ends, if `osascript` is available.
 
@@ -237,16 +250,16 @@ Opens an interactive, full-screen view that refreshes every 5 seconds:
 - **Log**: the last 200 lines of the `*-<job ID>.out` file of the highlighted job, followed live.
 - **Last 24 h**: the jobs that ended in the last day, with their state and exit code.
 
-| Key            | Action                                                        |
-| -------------- | ------------------------------------------------------------- |
-| `Up` / `Down`  | Highlight a job; the log panel follows it                     |
-| `Tab`          | Move between the job list, the log and the history            |
-| `c`            | Cancel the highlighted pending or running job, after a prompt |
-| `l`            | Open the whole log in `less` on the cluster (`q` to return)   |
-| `t`            | Open an SSH tunnel to a port of the highlighted running job, or close it |
-| `a`            | Switch the job list between your jobs and the jobs of every user |
-| `r`            | Refresh now                                                   |
-| `q`            | Quit                                                          |
+| Key           | Action                                                                   |
+| ------------- | ------------------------------------------------------------------------ |
+| `Up` / `Down` | Highlight a job; the log panel follows it                                |
+| `Tab`         | Move between the job list, the log and the history                       |
+| `c`           | Cancel the highlighted pending or running job, after a prompt            |
+| `l`           | Open the whole log in `less` on the cluster (`q` to return)              |
+| `t`           | Open an SSH tunnel to a port of the highlighted running job, or close it |
+| `a`           | Switch the job list between your jobs and the jobs of every user         |
+| `r`           | Refresh now                                                              |
+| `q`           | Quit                                                                     |
 
 **All jobs.** `a` lists the pending and running jobs of every user, with a column for the owner, to show what occupies the cluster while a job of yours is pending. The jobs of other users are only listed: their logs and usage are never read, and they cannot be cancelled or tunnelled. The counters in the title bar always refer to your jobs.
 
@@ -321,10 +334,10 @@ hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama | --cmd COMMAND --port POR
 
 Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then forwards `localhost:PORT` to its node, as `tunnel` does. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
 
-| Service   | Default port | Command run on the node                                    |
-| --------- | ------------ | ---------------------------------------------------------- |
-| `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`) |
-| `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace |
+| Service   | Default port | Command run on the node                                                                  |
+| --------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`)                  |
+| `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace     |
 | `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:*` |
 
 With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
@@ -343,9 +356,9 @@ hpc setup [ollama] [comfy] [--time HH:MM:SS]
 
 Checks ollama and ComfyUI and installs what is missing, so that `hpc serve ... ollama|comfy` works. Without arguments it handles both. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone.
 
-| Component | Installed in                                                                      |
-| --------- | --------------------------------------------------------------------------------- |
-| `ollama`  | `~/.local/bin/ollama` and `~/.local/lib/ollama`, from the official `.tar.zst` archive (needs `zstd` on the node) |
+| Component | Installed in                                                                                                                |
+| --------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `ollama`  | `~/.local/bin/ollama` and `~/.local/lib/ollama`, from the official `.tar.zst` archive (needs `zstd` on the node)            |
 | `comfy`   | conda environment `~/envs/comfy` (Python 3.12, `comfy-cli`) and ComfyUI in `~/comfy/ComfyUI` (`comfy-cli install --nvidia`) |
 
 The ComfyUI install runs with `CONDA_PREFIX` pointing at `~/envs/comfy`, that environment first on the `PATH` and the user site hidden (`PYTHONNOUSERSITE=1`), and `serve comfy` does the same: `comfy-cli` takes its Python from `CONDA_PREFIX`, which a login shell sets to the conda base, and the base cannot be written, so without this pip fails or falls back to `~/.local` and pollutes the base environment. If `~/comfy/ComfyUI` exists but the environment has no PyTorch (a past install that went wrong), `setup` fails instead of reinstalling over it: move `~/comfy` aside and run it again.
@@ -490,11 +503,11 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 > [!NOTE]
 > The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
 
-| Service   | Needs                      | Start                                       | Address                  | Authentication |
-| --------- | -------------------------- | ------------------------------------------- | ------------------------ | -------------- |
-| `jupyter` | `jupyter` in your login environment | `hpc serve small --time 04:00:00 jupyter`   | `http://localhost:8888`  | token (in the job log) |
-| `comfy`   | `hpc setup comfy`          | `hpc serve small --time 04:00:00 comfy`     | `http://localhost:8188`  | none          |
-| `ollama`  | `hpc setup ollama`         | `hpc serve tiny --time 04:00:00 ollama`     | `http://localhost:11434` | none          |
+| Service   | Needs                               | Start                                     | Address                  | Authentication         |
+| --------- | ----------------------------------- | ----------------------------------------- | ------------------------ | ---------------------- |
+| `jupyter` | `jupyter` in your login environment | `hpc serve small --time 04:00:00 jupyter` | `http://localhost:8888`  | token (in the job log) |
+| `comfy`   | `hpc setup comfy`                   | `hpc serve small --time 04:00:00 comfy`   | `http://localhost:8188`  | none                   |
+| `ollama`  | `hpc setup ollama`                  | `hpc serve tiny --time 04:00:00 ollama`   | `http://localhost:11434` | none                   |
 
 ### One-time setup
 
@@ -565,13 +578,13 @@ When a workflow is opened in ComfyUI, the panel "Missing models" lists the files
 
 ### Problems
 
-| Symptom                                           | Cause and action                                                                                       |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `ended before it started`                         | The job failed at once; read `hpc logs ID` (typically a missing program: run `hpc setup`)              |
-| Connection reset or empty page, tunnel still open | The server is still starting, or it stopped: read `hpc logs ID`. `serve` does not notice a job that dies after the tunnel is open |
-| `hpc setup` prints `FAIL ... cannot reach`        | The compute node has no route to that site; report it to cluster support                               |
-| `ExitOnForwardFailure` or "address already in use" | The local port is taken: use `--port N`                                                               |
-| The server starts and stops at once               | The port is already in use on the node: use `--port N`                                                 |
+| Symptom                                            | Cause and action                                                                                                                  |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `ended before it started`                          | The job failed at once; read `hpc logs ID` (typically a missing program: run `hpc setup`)                                         |
+| Connection reset or empty page, tunnel still open  | The server is still starting, or it stopped: read `hpc logs ID`. `serve` does not notice a job that dies after the tunnel is open |
+| `hpc setup` prints `FAIL ... cannot reach`         | The compute node has no route to that site; report it to cluster support                                                          |
+| `ExitOnForwardFailure` or "address already in use" | The local port is taken: use `--port N`                                                                                           |
+| The server starts and stops at once                | The port is already in use on the node: use `--port N`                                                                            |
 
 ## 9. How it works
 
