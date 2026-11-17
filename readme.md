@@ -138,8 +138,9 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc tunnel ID PORT`                         | Forward a local port to a server run by job `ID`                 |
 | `hpc serve CLASS --time T SERVICE`           | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost |
 | `hpc setup [ollama] [comfy]`                 | Check ollama and ComfyUI on a cpu node and install what is missing |
-| `hpc model comfy URL --to KIND`, `hpc model ollama NAME` | Download a model on the cluster, in a cpu job |
+| `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job |
 | `hpc model list [comfy\|ollama]`              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
+| `hpc model template NAME`, `hpc model comfy --workflow FILE` | Download the models that a ComfyUI template or workflow file declares |
 | `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
 | `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
 | `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
@@ -324,7 +325,7 @@ Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of 
 | --------- | ------------ | ---------------------------------------------------------- |
 | `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`) |
 | `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace |
-| `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=https://asp-chef.alviano.net` |
+| `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:*` |
 
 With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
 
@@ -354,22 +355,28 @@ Only the software is installed: no model is downloaded and no custom node is add
 ### `model`
 
 ```bash
-hpc model comfy URL --to KIND [--filename NAME] [--time HH:MM:SS]
+hpc model comfy [--to KIND] URL... [--to KIND URL...] [--filename NAME] [--time HH:MM:SS]
 hpc model ollama NAME [--time HH:MM:SS]
 hpc model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]
+hpc model template NAME [--time HH:MM:SS]
+hpc model template list [--filter TEXT]
+hpc model comfy --workflow FILE.json [--time HH:MM:SS]
 ```
 
 Downloads a model **on the cluster**, in a `cpu` job (default `--time 01:00:00`), so that the file never goes through your computer. The ComfyUI button "Download" in the web interface downloads through your browser, onto your machine: use this command (or the Model Manager of ComfyUI-Manager) instead.
 
-- `comfy`: the file at `URL` goes to `~/comfy/ComfyUI/models/KIND`, with `KIND` the models folder shown by ComfyUI: `checkpoints`, `loras`, `vae`, `text_encoders`, `diffusion_models`, ... The file name is the last part of the URL, without its query string; `--filename` overrides it. The URL must be `https://`, and `KIND` a folder under `models/`, with sub-folders if needed (`loras`, `diffusion_models/FLUX1`, ...), never starting a segment with a dot. The download is done by `comfy-cli model download`.
+- `comfy`: each file at a `URL` goes to `~/comfy/ComfyUI/models/KIND`, with `KIND` the models folder shown by ComfyUI: `checkpoints`, `loras`, `vae`, `text_encoders`, `diffusion_models`, ... (sub-folders are allowed, such as `diffusion_models/FLUX1`; no segment may start with a dot). Several URLs go in one command and one job: **a `--to` applies to the URLs after it**, and a URL written before any `--to` takes the first one. The file name is the last part of the URL, without its query string; `--filename` overrides it and is accepted for a single URL only. Every URL must be `https://`. The download is done by `comfy-cli model download`.
 - `ollama`: pulls the model `NAME` (for instance `llama3.2:1b`) into `~/.ollama`, with a private Ollama server started on the node for the time of the pull. Without a tag, `:latest` is meant.
-- Safe to repeat: a model that is already there is skipped, **a file is never overwritten** (if a file of the same name has another size, the command stops and asks you to remove it), and a download larger than the free space of the home is refused before it starts. A ComfyUI download whose server does not announce the size runs without that check, and says so.
+- Safe to repeat: a model that is already there is skipped and **a file is never overwritten** (a file of the same name and another size is reported as `FAIL`, to be removed by you). The free space of the home is compared with the **sum** of the announced sizes before anything is downloaded: if the total does not fit, nothing is downloaded. After that every file is tried, a failed one does not stop the others, and the command exits with an error if any failed. A file whose server does not announce the size is left out of the sum, and the command says so.
+- `template` and `--workflow`: you do not need to copy any URL. A ComfyUI workflow declares, for each model, its folder, file name and download URL (this is what the "Missing models" panel reads). `hpc model template NAME` downloads all the models of a template installed with ComfyUI on the cluster, for instance `hpc model template video_minimax_h3_i2v`; `hpc model template list [--filter minimax]` shows the templates that declare models and how many of them are present (`[x]` all, `[~]` some, `[ ]` none). `hpc model comfy --workflow FILE.json` does the same for a workflow file of yours (the file is sent to the head node, and no URL, `--to` or `--filename` may be given with it). The download follows the rules above (space on the sum, no overwriting, a failed file does not stop the others). Templates of the cloud APIs (`api_*`) declare no models and are not listed.
 - `list`: shows the ComfyUI models of the catalogue of ComfyUI-Manager (about 500: type, target folder, size, name and file) and the Ollama models installed, with `[x]` on those already present and `[ ]` on the others. `--type lora` keeps one catalogue type, `--filter flux` the models whose name, file, base or folder contains the text (case-insensitive), `--urls` adds the download URL to give to `hpc model comfy`. The folder of a row is the value for `--to` (it may have sub-folders, such as `diffusion_models/FLUX1`). It reads files on the head node and starts no job. A ComfyUI model is "present" when its file is in that exact folder under `~/comfy/ComfyUI/models`. The catalogue is not complete (recent models may be missing: use the URL of the model directly), and for Ollama only the installed models are listed, because the catalogue of [ollama.com/library](https://ollama.com/library) has no official API.
 - Needs `hpc setup comfy` or `hpc setup ollama` first. Models from sites that require a login (private Hugging Face or CivitAI files) are not supported.
 
 ```bash
 hpc model list comfy --type lora --filter flux --urls          # what exists, what is already there
 hpc model comfy "https://huggingface.co/ORG/REPO/resolve/main/model.safetensors" --to diffusion_models
+hpc model comfy --to loras URL1 --to vae URL2 URL3 --to text_encoders URL4 --to diffusion_models URL5   # one job, five files
+hpc model template video_minimax_h3_i2v                            # the models of a ComfyUI template, no URL needed
 hpc model ollama llama3.2:1b
 ```
 
@@ -481,7 +488,7 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 [`hpc serve`](#serve) runs a server as a Slurm job on a compute node and opens it on `localhost`. The three services below have a preset; anything else goes through `--cmd`.
 
 > [!NOTE]
-> The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options (including `OLLAMA_ORIGINS` for ASP-Chef) come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
+> The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
 
 | Service   | Needs                      | Start                                       | Address                  | Authentication |
 | --------- | -------------------------- | ------------------------------------------- | ------------------------ | -------------- |
@@ -511,7 +518,7 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 
 ### Ollama
 
-- The server listens for the web application `https://asp-chef.alviano.net` (`OLLAMA_ORIGINS`); for another origin use `--cmd` with your own `OLLAMA_ORIGINS`.
+- **`OLLAMA_ORIGINS`** lists the web origins whose pages may call the Ollama API from a browser. Without it Ollama accepts only `localhost`, and the browser (CORS) blocks a web application served from another address that tries to use `http://localhost:11434` through the tunnel. The preset sets it to `http://localhost:*,http://127.0.0.1:*`: an application on your machine, on any port, may use the server; no other site may. It is not needed by `curl` or by the `ollama` client. To allow a web application served from another address, start the server with `--cmd` and your own value, for instance `hpc serve tiny --time 02:00:00 --port 11434 --cmd 'OLLAMA_ORIGINS=https://my.app OLLAMA_HOST=0.0.0.0:__PORT__ exec ~/.local/bin/ollama serve'`; a page of that site, opened in your browser while the tunnel is up, can then use your Ollama (`OLLAMA_ORIGINS=*` accepts every origin and is not advisable).
 - Models are stored in `~/.ollama` of the shared `/home` and survive from one `serve` to the next; the server does not.
 - Download a model on the cluster with [`hpc model ollama NAME`](#model), then use it through the tunnel, for instance with `curl`:
 
@@ -523,7 +530,7 @@ curl http://localhost:11434/api/generate -d '{"model": "MODEL", "prompt": "Hello
 ### ComfyUI
 
 - ComfyUI starts with ComfyUI-Manager and CORS enabled, in the workspace `~/comfy/ComfyUI`.
-- Models go in `~/comfy/ComfyUI/models/<kind>/` (`checkpoints`, `loras`, `vae`, ...). **Do not use the "Download" button of the web interface**: it downloads to your computer through the browser. Download on the cluster with [`hpc model comfy URL --to KIND`](#model) (the URL is the link icon next to each missing model), or copy a file you already have:
+- Models go in `~/comfy/ComfyUI/models/<kind>/` (`checkpoints`, `loras`, `vae`, ...). **Do not use the "Download" button of the web interface**: it downloads to your computer through the browser. Download on the cluster with [`hpc model template NAME`](#model) (the models of a ComfyUI template, with no URL to copy), [`hpc model comfy --workflow FILE`](#model) (those of your workflow file) or [`hpc model comfy URL --to KIND`](#model), or copy a file you already have:
 
 ```bash
 hpc model comfy "https://huggingface.co/ORG/REPO/resolve/main/model.safetensors" --to checkpoints
@@ -531,6 +538,24 @@ rsync -avP model.safetensors "$HPC_USER"@hpcgate.unical.it:comfy/ComfyUI/models/
 ```
 
 - Check that the models fit the class: the GPU memory of `small` is 33 GB, and a workflow may need more than the sum of its files.
+#### From the "Missing models" panel to the download
+
+When a workflow is opened in ComfyUI, the panel "Missing models" lists the files it needs, each with a **Download** button. **Do not use it**: it downloads to your computer through the browser. Use the cluster instead:
+
+1. Note the workflow you opened and the files the panel lists (name, folder and size).
+2. On your machine, find the template: `hpc model template list --filter NAME` (for instance `--filter minimax`). Each row is a template with `[ ]`, `[~]` or `[x]` and `present/total`; pick the one whose model count matches the panel. A workflow of your own is a file: export it from the Workflow menu of ComfyUI and use it in the next step with `--workflow`.
+3. Download everything it needs, in one job (give it a time limit that fits the size: the rate seen on the cluster is about 40 MB/s, which is roughly 15 minutes for 40 GB):
+
+   ```bash
+   hpc model template video_minimax_h3_i2v --time 02:00:00     # a ComfyUI template
+   hpc model comfy --workflow my_workflow.json --time 02:00:00 # a workflow file of yours
+   ```
+
+   The command prints the free space and the total to download first, and downloads nothing if the total does not fit. If it stops half way, run it again: the files already complete are skipped.
+4. Check the result: `hpc model template list --filter NAME` must show `[x]` for the template.
+5. In the ComfyUI page, press the refresh icon of the "Missing models" panel (or reload the page): the models are now found. If ComfyUI was started before the download, a model list that stays stale is cured by reloading the page.
+6. Run the workflow on a class whose GPU memory holds the models: the GPU memory of each class is in its profile name (`small` has 33 GB; `medium` 71 GB). The sum of the model files is a lower bound of what is needed.
+
 - Custom nodes installed from the Manager need Internet access from the compute node.
 
 ### Security

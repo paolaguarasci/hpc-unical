@@ -207,8 +207,13 @@ CURLEOF
 cat > "$mh/envs/comfy/bin/comfy-cli" <<'CLIEOF'
 #!/bin/sh
 echo "comfy-cli $*" >> "$LOG"
-for a in "$@"; do last=$prev; prev=$a; done
-head -c "${STUB_SIZE:-10}" /dev/zero > "$HOME/comfy/ComfyUI/models/loras/m.bin"
+rel=; fn=
+while [ $# -gt 0 ]; do
+  case $1 in --relative-path) rel=$2 ;; --filename) fn=$2 ;; esac
+  shift
+done
+[ "$fn" = "${STUB_FAIL:-}" ] && exit 1
+head -c "${STUB_SIZE:-10}" /dev/zero > "$HOME/comfy/ComfyUI/$rel/$fn"
 CLIEOF
 chmod +x "$WORK/cs/curl" "$mh/envs/comfy/bin/comfy-cli"
 URL=https://example.org/m.bin
@@ -277,6 +282,96 @@ out=$(HOME="$WORK/empty-home" python3 "$ROOT/remote/model_list.py" comfy "" "" 0
 out=$(HOME="$WORK/empty-home" python3 "$ROOT/remote/model_list.py" ollama "" "" 0 2>&1); code=$?
 [[ $code -eq 0 && $out == *"0 models installed"* ]] && ok "model list handles an empty Ollama store" || { fail "model list handles an empty Ollama store"; echo "$out"; }
 
+# --- a script edited while it runs must not be misread (bash reads it as it goes) ---
+mkdir -p "$WORK/mut/bin" "$WORK/mut/slow"
+cp "$ROOT/bin/hpc" "$WORK/mut/bin/hpc"
+printf '#!/bin/sh\nsleep 2\n' > "$WORK/mut/slow/ssh"; chmod +x "$WORK/mut/slow/ssh"
+(cd "$WORK/proj" && PATH="$WORK/mut/slow:$PATH" "$WORK/mut/bin/hpc" queue > "$WORK/mut/out" 2>&1; echo $? > "$WORK/mut/code") &
+sleep 1
+# Rewrite the same file in place, longer, like an editor saving it: every offset below the change moves.
+python3 - "$WORK/mut/bin/hpc" <<'PYEOF2'
+import sys
+lines = open(sys.argv[1]).read().split("\n")
+lines.insert(3, "# " + "inserted while the script runs " * 8)
+open(sys.argv[1], "w").write("\n".join(lines))
+PYEOF2
+wait
+[[ $(cat "$WORK/mut/code") -eq 0 && ! -s "$WORK/mut/out" ]] && ok "a script rewritten while it runs does not run anything after its last command" || { fail "a script rewritten while it runs does not run anything after its last command"; cat "$WORK/mut/out"; }
+
+# --- model: several URLs in one command ---
+U1=https://example.org/a.safetensors; U2=https://example.org/b.safetensors; U3=https://example.org/c.safetensors
+run model comfy --to loras $U1 --to vae $U2 $U3 --to text_encoders
+expect_logged "model sends one job for all the URLs" "hpc-model comfy"
+expect_logged "model gives a URL the --to before it" "$U1 loras a.safetensors"
+expect_logged "model keeps the --to for the URLs that follow it" "$U2 vae b.safetensors $U3 vae c.safetensors"
+run model comfy $U1 --to loras $U2
+expect_logged "model gives a URL before any --to the first --to" "$U1 loras a.safetensors $U2 loras b.safetensors"
+expect_error "model rejects --filename with several URLs" model comfy --to vae $U1 $U2 --filename x.bin
+expect_error "model rejects a URL that is not https among several" model comfy --to vae $U1 http://example.org/x.bin
+expect_error "model rejects a bad --to for the URLs that follow it" model comfy --to vae $U1 --to ../x $U2
+run model comfy --to vae $U1 --to loras $U2
+expect_logged "model sends a different folder per URL" "$U2 loras b.safetensors"
+# The script with several models: one present, one new, one failing, all in one run.
+mkdir -p "$mh/comfy/ComfyUI/models/vae"
+rm -f "$mh/comfy/ComfyUI/models/loras/"* "$mh/comfy/ComfyUI/models/vae/"*
+head -c 10 /dev/zero > "$mh/comfy/ComfyUI/models/vae/have.bin"
+: > "$LOG"; out=$(STUB_FAIL=bad.bin HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy https://e.org/have.bin vae have.bin https://e.org/new.bin loras new.bin https://e.org/bad.bin loras bad.bin 2>&1); code=$?
+[[ $code -ne 0 && $out == *"ok   - have.bin is already in models/vae"* && $out == *"ok   - new.bin is in models/loras"* && $out == *"FAIL - download of bad.bin failed"* && -f "$mh/comfy/ComfyUI/models/loras/new.bin" ]] && ok "model script goes on after a failed file and fails at the end" || { fail "model script goes on after a failed file and fails at the end"; echo "$out"; }
+[[ $(grep -c "model download" "$LOG") -eq 2 ]] && ok "model script downloads only what is missing" || { fail "model script downloads only what is missing"; cat "$LOG"; }
+rm -f "$mh/comfy/ComfyUI/models/loras/"*
+free=$(df -Pk "$mh" | awk 'NR==2 {print $4 * 1024}'); half=$((free * 6 / 10))
+out=$(STUB_SIZE=$half HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy https://e.org/x.bin loras x.bin https://e.org/y.bin loras y.bin 2>&1); code=$?
+[[ $code -ne 0 && $out == *"not enough space"* && ! -e "$mh/comfy/ComfyUI/models/loras/x.bin" ]] && ok "model script refuses when the sum does not fit, even if each file does, and downloads nothing" || { fail "model script refuses when the sum does not fit, even if each file does, and downloads nothing"; echo "$out"; }
+
+# --- model template and --workflow: the models a workflow declares ---
+TSV=$(printf 'https://e.org/a.bin\tloras\ta.bin\nhttps://e.org/b.bin\tdiffusion_models/X\tb.bin\n')
+STUB_OUT="$TSV" run model template video_x --time 02:00:00
+expect_logged "template asks the head node for the models of the template" "models template video_x"
+expect_logged "template sends the script as the -c argument" "-c"
+expect_logged "template downloads in one cpu job" "hpc-model comfy https://e.org/a.bin loras a.bin https://e.org/b.bin diffusion_models/X b.bin"
+expect_logged "template --time applies to the download" "--time=02:00:00"
+STUB_OUT="$TSV" STUB_EXIT=1 expect_error "template fails when the cluster refuses" model template nope
+STUB_OUT="$TSV" STUB_EXIT=1 run model template nope
+expect_not_logged "template downloads nothing when the lookup failed" "srun"
+expect_error "template declaring no models fails" model template empty
+expect_error "template rejects an unsafe name" model template '../x'
+expect_error "template needs a name" model template
+expect_error "template takes one name" model template a b
+expect_error "template --filter is for the list" model template a --filter x
+run model template list --filter minimax
+expect_logged "template list asks the head node" "list minimax"
+expect_not_logged "template list starts no job" "srun"
+printf '{"nodes": []}' > "$WORK/proj/wf.json"
+STUB_OUT="$TSV" run model comfy --workflow wf.json
+expect_logged "workflow sends the file to the head node" "models stdin -"
+expect_logged "workflow downloads what it declares" "hpc-model comfy https://e.org/a.bin loras a.bin"
+expect_error "workflow rejects a missing file" model comfy --workflow nope.json
+expect_error "workflow rejects URLs next to it" model comfy --workflow wf.json https://e.org/x.bin
+expect_error "workflow rejects --to next to it" model comfy --workflow wf.json --to vae
+expect_error "workflow is for comfy only" model ollama x --workflow wf.json
+# The script: a fake template package, a fake home with one model present.
+th="$WORK/th"; mkdir -p "$th/comfy/ComfyUI/models/loras" "$WORK/tp/comfyui_workflow_templates_json/templates"
+: > "$WORK/tp/comfyui_workflow_templates_json/__init__.py"
+echo x > "$th/comfy/ComfyUI/models/loras/a.bin"
+cat > "$WORK/tp/comfyui_workflow_templates_json/templates/video_x.json" <<'JSONEOF'
+{"nodes": [{"properties": {"models": [{"name": "a.bin", "url": "https://e.org/a.bin", "directory": "loras"}]}}],
+ "definitions": {"subgraphs": [{"nodes": [{"properties": {"models": [
+   {"name": "b.bin", "url": "https://e.org/b.bin", "directory": "diffusion_models"},
+   {"name": "a.bin", "url": "https://e.org/a.bin", "directory": "loras"}]}}]}]}}
+JSONEOF
+echo '{"nodes": []}' > "$WORK/tp/comfyui_workflow_templates_json/templates/api_x.json"
+wm() { HOME="$th" PYTHONPATH="$WORK/tp" python3 -c "$(cat "$ROOT/remote/workflow_models.py")" "$@" 2>&1; }
+out=$(wm models template video_x)
+[[ $out == $'https://e.org/a.bin\tloras\ta.bin\nhttps://e.org/b.bin\tdiffusion_models\tb.bin' ]] && ok "workflow script finds the models, subgraphs included, once each" || { fail "workflow script finds the models, subgraphs included, once each"; echo "$out"; }
+out=$(echo '{"x": {"name": "m.bin", "url": "https://e.org/m", "directory": "vae"}}' | wm models stdin -)
+[[ $out == $'https://e.org/m\tvae\tm.bin' ]] && ok "workflow script reads a workflow from standard input" || { fail "workflow script reads a workflow from standard input"; echo "$out"; }
+out=$(wm list ""); 
+[[ $out == *"[~]"*"1/2"*"video_x"* && $out != *"api_x"* && $out == *"1 templates with models"* ]] && ok "template list shows the present models and skips the templates without any" || { fail "template list shows the present models and skips the templates without any"; echo "$out"; }
+out=$(wm models template nope); code=$?
+[[ $out == *"no template named 'nope'"* ]] && ok "workflow script names the missing template" || { fail "workflow script names the missing template"; echo "$out"; }
+out=$(HOME="$th" python3 -c "$(cat "$ROOT/remote/workflow_models.py")" models template x 2>&1)
+[[ $out == *"run hpc setup comfy"* ]] && ok "workflow script asks for hpc setup when the templates are missing" || { fail "workflow script asks for hpc setup when the templates are missing"; echo "$out"; }
+
 # --- serve: a server as a job, opened on localhost, cancelled on exit ---
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --time 02:00:00 jupyter
 expect_logged "serve submits with the class preset" "sbatch --parsable --partition=aiq --qos=scavenger"
@@ -295,6 +390,8 @@ expect_logged "serve comfy hides the user site" "PYTHONNOUSERSITE=1"
 expect_logged "serve comfy points comfy-cli at its environment" "CONDA_PREFIX=\\\$HOME/envs/comfy"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 ollama
 expect_logged "serve ollama uses the binary installed by setup" ".local/bin/ollama"
+expect_logged "serve ollama allows only local origins" "OLLAMA_ORIGINS=http://localhost"
+expect_not_logged "serve ollama no longer allows ASP-Chef" "alviano.net"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 --cmd 'python3 -m http.server __PORT__' --port 8000
 expect_logged "serve --cmd replaces __PORT__" "python3\\ -m\\ http.server\\ 8000"
 expect_logged "serve --cmd names the job" "--job-name=serve-custom"

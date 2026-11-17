@@ -267,7 +267,7 @@ service() {
     jupyter) PORT=8888;  SERVICE='exec jupyter lab --no-browser --ip=0.0.0.0 --port=__PORT__' ;;
     # comfy and ollama are the ones installed by `hpc setup`, called by absolute path.
     comfy)   PORT=8188;  SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 CONDA_PREFIX=\$HOME/envs/comfy PATH=\$HOME/envs/comfy/bin:\$PATH && comfy-cli set-default ~/comfy/ComfyUI/ --launch-extras='--enable-manager --enable-cors-header --port __PORT__ --listen 0.0.0.0' && exec comfy-cli launch" ;;
-    ollama)  PORT=11434; SERVICE='OLLAMA_ORIGINS=https://asp-chef.alviano.net OLLAMA_HOST=0.0.0.0:__PORT__ OLLAMA_VULKAN=1 exec ~/.local/bin/ollama serve' ;;
+    ollama)  PORT=11434; SERVICE='OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:* OLLAMA_HOST=0.0.0.0:__PORT__ OLLAMA_VULKAN=1 exec ~/.local/bin/ollama serve' ;;
     *) die "unknown service '$1' (jupyter|comfy|ollama, or --cmd)" ;;
   esac
 }
@@ -346,26 +346,45 @@ fail() { echo "FAIL - $1"; return 1; }
 free_bytes() { df -Pk "$HOME" | awk 'NR==2 {print $4 * 1024}'; }
 gb() { awk -v b="$1" 'BEGIN {printf "%.1f GB", b / 1073741824}'; }
 
+# Size announced by the last response of URL (after the redirects); empty when the server does not give it.
+announced_size() {
+  curl -fsIL --max-time 30 "$1" | tr -d '\r' | awk '/^HTTP/ {s = ""} tolower($1) == "content-length:" {s = $2} END {print s}'
+}
+
+# Arguments: URL DIR NAME, repeated. The space is checked on the sum before anything is downloaded; after that
+# every file is tried, and the status is non-zero when one failed.
 model_comfy() {
-  local url=$1 dir=$2 name=$3 ws=$HOME/comfy/ComfyUI size free
-  local target=$ws/models/$dir/$name
+  local ws=$HOME/comfy/ComfyUI free total=0 status=0 i n=0 target
+  local url=() dir=() name=() size=() action=()
   [ -d "$ws" ] || { fail "ComfyUI is not installed in $ws: run hpc setup comfy"; return 1; }
-  # Size announced by the last response (after the redirects), to compare with the free space.
-  size=$(curl -fsIL --max-time 30 "$url" | tr -d '\r' | awk '/^HTTP/ {s = ""} tolower($1) == "content-length:" {s = $2} END {print s}')
+  while [ $# -ge 3 ]; do url[n]=$1; dir[n]=$2; name[n]=$3; shift 3; n=$((n + 1)); done
   free=$(free_bytes)
-  if [ -e "$target" ]; then
-    if [ -n "$size" ] && [ "$(wc -c < "$target" | tr -d ' ')" = "$size" ]; then echo "ok   - $name is already in models/$dir"; return 0; fi
-    fail "$target exists with a different size: remove it and run again"; return 1
-  fi
-  if [ -z "$size" ]; then echo "warn - the server does not announce the size: the free space is not checked"
-  elif [ "$size" -gt "$free" ]; then fail "not enough space: $name needs $(gb "$size"), the home has $(gb "$free") free"; return 1
-  fi
-  echo "free space in the home: $(gb "$free")${size:+; download: $(gb "$size")}"
+  for ((i = 0; i < n; i++)); do
+    target=$ws/models/${dir[i]}/${name[i]}
+    size[i]=$(announced_size "${url[i]}")
+    if [ -e "$target" ]; then
+      if [ -n "${size[i]}" ] && [ "$(wc -c < "$target" | tr -d ' ')" = "${size[i]}" ]; then action[i]=have; else action[i]=differs; fi
+    else
+      action[i]=get
+      total=$((total + ${size[i]:-0}))
+      [ -n "${size[i]}" ] || echo "warn - ${name[i]}: the server does not announce the size, so it is not in the space check"
+    fi
+  done
+  if [ "$total" -gt "$free" ]; then fail "not enough space: the downloads need $(gb "$total"), the home has $(gb "$free") free"; return 1; fi
+  echo "free space in the home: $(gb "$free"); to download: $(gb "$total")"
   unset VIRTUAL_ENV
   export CONDA_PREFIX="$HOME/envs/comfy" PYTHONNOUSERSITE=1
-  mkdir -p "$ws/models/$dir"
-  "$HOME/envs/comfy/bin/comfy-cli" --skip-prompt --workspace "$ws" model download --url "$url" --relative-path "models/$dir" --filename "$name" \
-    && [ -f "$target" ] && echo "ok   - $name is in models/$dir" || { fail "download of $name failed"; return 1; }
+  for ((i = 0; i < n; i++)); do
+    target=$ws/models/${dir[i]}/${name[i]}
+    if [ "${action[i]}" = have ]; then echo "ok   - ${name[i]} is already in models/${dir[i]}"
+    elif [ "${action[i]}" = differs ]; then fail "$target exists with a different size: remove it and run again"; status=1
+    else
+      mkdir -p "$ws/models/${dir[i]}"
+      if "$HOME/envs/comfy/bin/comfy-cli" --skip-prompt --workspace "$ws" model download --url "${url[i]}" --relative-path "models/${dir[i]}" --filename "${name[i]}" && [ -f "$target" ]
+      then echo "ok   - ${name[i]} is in models/${dir[i]}"; else fail "download of ${name[i]} failed"; status=1; fi
+    fi
+  done
+  return $status
 }
 
 model_ollama() {
@@ -409,33 +428,97 @@ cmd_model_list() {
   on_cluster "py=\$HOME/envs/comfy/bin/python; [ -x \"\$py\" ] || py=python3; PYTHONNOUSERSITE=1 \"\$py\" - $(quote_args "$target" "$type" "$text" "$urls")" < "$ROOT/remote/model_list.py"
 }
 
-# Download a model on the cluster: a ComfyUI file by URL into models/KIND, or an Ollama model by name.
+# The models that a ComfyUI workflow declares ("URL<TAB>DIRECTORY<TAB>NAME" per line) or the templates that
+# declare models. Runs remote/workflow_models.py on the head node; the script travels as the -c argument, so
+# that standard input is free for a workflow file.
+workflow_models() { # workflow_models MODE ARG...
+  on_cluster "py=\$HOME/envs/comfy/bin/python; [ -x \"\$py\" ] || py=python3; PYTHONNOUSERSITE=1 \"\$py\" -c $(quote_args "$(cat "$ROOT/remote/workflow_models.py")" "$@")"
+}
+
+# Validate "URL DIR NAME" triplets and download them in one cpu job.
+download_comfy() { # download_comfy TIME URL DIR NAME ...
+  local time=$1 i
+  shift
+  local a=("$@")
+  for ((i = 0; i < ${#a[@]}; i += 3)); do
+    [[ ${a[i]} =~ ^https://[^[:space:]]+$ ]] || die "the URL must start with https://: ${a[i]}"
+    # A folder under models/, possibly with sub-folders (diffusion_models/FLUX1); no segment may start with "."
+    [[ ${a[i+1]} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$ ]] || die "invalid --to '${a[i+1]}': a folder under models/ (loras, vae, diffusion_models/FLUX1, ...), see: hpc model list"
+    [[ ${a[i+2]} =~ ^[A-Za-z0-9._-]+$ ]] || die "cannot derive a safe file name from ${a[i]}: use --filename"
+  done
+  cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model comfy "${a[@]}"
+}
+
+# Download the models listed by workflow_models (TSV lines in $2).
+download_declared() { # download_declared TIME TSV
+  local args=() url dir name
+  while IFS=$'\t' read -r url dir name; do
+    if [[ -n $url ]]; then args+=("$url" "$dir" "$name"); fi
+  done <<< "$2"
+  [[ ${#args[@]} -gt 0 ]] || die "the workflow declares no models"
+  download_comfy "$1" "${args[@]}"
+}
+
+# The models of a ComfyUI template, by name, or the list of the templates and how many models are present.
+cmd_model_template() {
+  local time=01:00:00 name='' text='' list=0 declared
+  if [[ ${1:-} == list ]]; then list=1; shift; fi
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time)   time=${2:?--time needs a value}; shift 2 ;;
+      --filter) text=${2:?--filter needs a value}; shift 2 ;;
+      -*)       die "unknown option $1" ;;
+      *)        [[ -z $name ]] || die "name exactly one template"; name=$1; shift ;;
+    esac
+  done
+  if [[ $list -eq 1 ]]; then
+    [[ -z $name ]] || die "usage: hpc model template list [--filter TEXT]"
+    workflow_models list "$text" < /dev/null
+    return
+  fi
+  [[ $name =~ ^[A-Za-z0-9_.-]+$ ]] || die "usage: hpc model template NAME [--time T] | hpc model template list [--filter TEXT]"
+  [[ -z $text ]] || die "--filter applies to 'template list'"
+  declared=$(workflow_models models template "$name" < /dev/null)
+  download_declared "$time" "$declared"
+}
+
+# Download models on the cluster: ComfyUI files by URL (or those a workflow file declares) into models/KIND,
+# or an Ollama model by name. For ComfyUI, a --to applies to the URLs that follow it; a URL before any --to
+# takes the first --to.
 cmd_model() {
-  local time=01:00:00 kind=${1:-} to='' filename='' pos=() name
+  local time=01:00:00 kind=${1:-} first_to='' cur_to='' filename='' workflow='' pos=() tos=() i name args=()
   if [[ $kind == list ]]; then shift; cmd_model_list "$@"; return; fi
-  [[ $kind == comfy || $kind == ollama ]] || die "usage: hpc model comfy URL --to KIND [--filename NAME] [--time T] | hpc model ollama NAME [--time T] | hpc model list [comfy|ollama]"
+  if [[ $kind == template ]]; then shift; cmd_model_template "$@"; return; fi
+  [[ $kind == comfy || $kind == ollama ]] || die "usage: hpc model comfy [--to KIND] URL... [--to KIND URL...] [--filename NAME] [--time T] | hpc model comfy --workflow FILE | hpc model template NAME | hpc model ollama NAME [--time T] | hpc model list [comfy|ollama]"
   shift
   while [[ $# -gt 0 ]]; do
     case $1 in
       --time)     time=${2:?--time needs a value}; shift 2 ;;
-      --to)       to=${2:?--to needs a value}; shift 2 ;;
+      --to)       cur_to=${2:?--to needs a value}; first_to=${first_to:-$cur_to}; shift 2 ;;
       --filename) filename=${2:?--filename needs a value}; shift 2 ;;
+      --workflow) workflow=${2:?--workflow needs a value}; shift 2 ;;
       -*)         die "unknown option $1" ;;
-      *)          pos+=("$1"); shift ;;
+      *)          pos+=("$1"); tos+=("$cur_to"); shift ;;
     esac
   done
-  [[ ${#pos[@]} -eq 1 ]] || die "name exactly one model ($kind)"
   if [[ $kind == ollama ]]; then
-    [[ -z $to && -z $filename ]] || die "--to and --filename apply to comfy only"
+    [[ ${#pos[@]} -eq 1 ]] || die "name exactly one Ollama model"
+    [[ -z $first_to && -z $filename && -z $workflow ]] || die "--to, --filename and --workflow apply to comfy only"
     [[ ${pos[0]} =~ ^[A-Za-z0-9._:/-]+$ ]] || die "invalid Ollama model name '${pos[0]}'"
     cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model ollama "${pos[0]}"
+  elif [[ -n $workflow ]]; then
+    [[ ${#pos[@]} -eq 0 && -z $first_to && -z $filename ]] || die "--workflow replaces the URLs, --to and --filename"
+    [[ -r $workflow ]] || die "cannot read the workflow file '$workflow'"
+    download_declared "$time" "$(workflow_models models stdin - < "$workflow")"
   else
-    [[ ${pos[0]} =~ ^https://[^[:space:]]+$ ]] || die "the URL must start with https://"
-    # A folder under models/, possibly with sub-folders (diffusion_models/FLUX1); no segment may start with "."
-    [[ $to =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$ ]] || die "--to needs a folder under models/ (loras, vae, diffusion_models/FLUX1, ...), see: hpc model list"
-    name=${filename:-$(basename "${pos[0]%%\?*}")}
-    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "cannot derive a safe file name from the URL: use --filename"
-    cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model comfy "${pos[0]}" "$to" "$name"
+    [[ ${#pos[@]} -ge 1 ]] || die "name at least one URL, or use --workflow FILE or hpc model template NAME"
+    [[ -n $first_to ]] || die "--to needs the models folder (loras, vae, diffusion_models/FLUX1, ...), see: hpc model list"
+    [[ -z $filename || ${#pos[@]} -eq 1 ]] || die "--filename applies to a single URL"
+    for i in "${!pos[@]}"; do
+      name=${filename:-$(basename "${pos[i]%%\?*}")}
+      args+=("${pos[i]}" "${tos[i]:-$first_to}" "$name")
+    done
+    download_comfy "$time" "${args[@]}"
   fi
 }
 
@@ -561,10 +644,16 @@ usage: hpc COMMAND [ARGS]
   setup [ollama] [comfy] [--time T]
                   check ollama (~/.local) and ComfyUI (~/comfy, env ~/envs/comfy) on a cpu node and install
                   what is missing, software only (default: both; --time default 01:00:00)
-  model comfy URL --to KIND [--filename NAME] [--time T] | model ollama NAME [--time T]
-                  download a model on the cluster, in a cpu job: a ComfyUI file into ~/comfy/ComfyUI/models/KIND
-                  (loras, vae, text_encoders, diffusion_models, ...) or an Ollama model; never overwrites,
-                  refuses when the home has too little free space
+  model comfy [--to KIND] URL... [--to KIND URL...] [--filename NAME] [--time T] | model ollama NAME [--time T]
+                  download models on the cluster, in a cpu job: ComfyUI files into ~/comfy/ComfyUI/models/KIND (a
+                  --to applies to the URLs after it; a URL before any --to takes the first one) or an Ollama
+                  model; never overwrites; the free space is checked on the total before anything is downloaded;
+                  a failed file does not stop the others
+  model comfy --workflow FILE.json
+                  download the models that a ComfyUI workflow file declares (folder and URL are in the file)
+  model template NAME | model template list [--filter TEXT]
+                  the same for a ComfyUI template installed on the cluster, by name; the list shows how many of
+                  the models of each template are present
   model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]
                   ComfyUI models of the ComfyUI-Manager catalogue and the Ollama models installed,
                   with [x] on those already present (reads the head node; no job)
@@ -601,4 +690,4 @@ case ${1:-help} in
   free)   cmd_free ;;
   help|-h|--help) usage ;;
   *) usage >&2; exit 1 ;;
-esac
+esac; exit  # nothing may follow: bash reads a script while it runs, and a file edited meanwhile would be misread
