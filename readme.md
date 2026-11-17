@@ -19,7 +19,7 @@ Submit Slurm jobs with sensible presets, watch the queue, sync files and read lo
 [![GPU: NVIDIA H200 MIG](https://img.shields.io/badge/GPU-NVIDIA%20H200%20MIG-76B900?logo=nvidia&logoColor=white)](#5-resource-classes)
 [![Access: SSH over VPN](https://img.shields.io/badge/access-SSH%20%2B%20OpenVPN-EA7E20?logo=openvpn&logoColor=white)](#1-prerequisites)
 [![Platform: macOS | Linux](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey?logo=apple&logoColor=white)](#1-prerequisites)
-[![Tests: offline suite](https://img.shields.io/badge/tests-offline%20suite-brightgreen)](#10-tests)
+[![Tests: offline suite](https://img.shields.io/badge/tests-offline%20suite-brightgreen)](#11-tests)
 
 </div>
 
@@ -57,6 +57,9 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`cancel`](#cancel)
     - [`shell`](#shell)
     - [`tunnel`](#tunnel)
+    - [`serve`](#serve)
+    - [`setup`](#setup)
+    - [`model`](#model)
     - [`wait`](#wait)
     - [`doctor`](#doctor)
     - [`info`](#info)
@@ -64,9 +67,10 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
   - [5. Resource classes](#5-resource-classes)
   - [6. QoS, bookings and preemption](#6-qos-bookings-and-preemption)
   - [7. Writing your own job](#7-writing-your-own-job)
-  - [8. How it works](#8-how-it-works)
-  - [9. Troubleshooting](#9-troubleshooting)
-  - [10. Tests](#10-tests)
+  - [8. Interactive services](#8-interactive-services-jupyter-comfyui-and-ollama)
+  - [9. How it works](#9-how-it-works)
+  - [10. Troubleshooting](#10-troubleshooting)
+  - [11. Tests](#11-tests)
   - [Before you leave](#before-you-leave)
   - [License](#license)
 
@@ -132,6 +136,9 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc cancel ID`                              | Cancel a job                                                     |
 | `hpc shell CLASS --time T [options]`         | Interactive shell on a compute node with the preset of `CLASS`   |
 | `hpc tunnel ID PORT`                         | Forward a local port to a server run by job `ID`                 |
+| `hpc serve CLASS --time T SERVICE`           | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost |
+| `hpc setup [ollama] [comfy]`                 | Check ollama and ComfyUI on a cpu node and install what is missing |
+| `hpc model comfy URL --to KIND`, `hpc model ollama NAME` | Download a model on the cluster, in a cpu job |
 | `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
 | `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
 | `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
@@ -304,6 +311,64 @@ hpc tunnel 4821 8000     # http://localhost:8000 -> port 8000 on the node that r
 
 Forwards `localhost:PORT` to the same port of the compute node of a running job, through the head node, until Ctrl-C. The command fails when the job has no node (pending or finished) or when the local port is already in use. It does not check that a server listens on the remote port: a connection that is reset at once means that nothing does (the `t` key of `hpc top` performs that check).
 
+### `serve`
+
+```bash
+hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
+```
+
+Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then forwards `localhost:PORT` to its node, as `tunnel` does. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
+
+| Service   | Default port | Command run on the node                                    |
+| --------- | ------------ | ---------------------------------------------------------- |
+| `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`) |
+| `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace |
+| `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=https://asp-chef.alviano.net` |
+
+With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
+
+```bash
+hpc serve small --time 04:00:00 jupyter                       # http://localhost:8888
+hpc serve medium --time 02:00:00 ollama --port 11500
+hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000
+```
+
+### `setup`
+
+```bash
+hpc setup [ollama] [comfy] [--time HH:MM:SS]
+```
+
+Checks ollama and ComfyUI and installs what is missing, so that `hpc serve ... ollama|comfy` works. Without arguments it handles both. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone.
+
+| Component | Installed in                                                                      |
+| --------- | --------------------------------------------------------------------------------- |
+| `ollama`  | `~/.local/bin/ollama` and `~/.local/lib/ollama`, from the official `.tar.zst` archive (needs `zstd` on the node) |
+| `comfy`   | conda environment `~/envs/comfy` (Python 3.12, `comfy-cli`) and ComfyUI in `~/comfy/ComfyUI` (`comfy-cli install --nvidia`) |
+
+The ComfyUI install runs with `CONDA_PREFIX` pointing at `~/envs/comfy`, that environment first on the `PATH` and the user site hidden (`PYTHONNOUSERSITE=1`), and `serve comfy` does the same: `comfy-cli` takes its Python from `CONDA_PREFIX`, which a login shell sets to the conda base, and the base cannot be written, so without this pip fails or falls back to `~/.local` and pollutes the base environment. If `~/comfy/ComfyUI` exists but the environment has no PyTorch (a past install that went wrong), `setup` fails instead of reinstalling over it: move `~/comfy` aside and run it again.
+
+Only the software is installed: no model is downloaded and no custom node is added. The node must reach `ollama.com`, `pypi.org`, `github.com` and the conda channels; if it cannot, the component fails with a message saying so. The files live in the shared `/home`, which has no quota or backup guarantee, and ComfyUI with PyTorch takes several gigabytes.
+
+### `model`
+
+```bash
+hpc model comfy URL --to KIND [--filename NAME] [--time HH:MM:SS]
+hpc model ollama NAME [--time HH:MM:SS]
+```
+
+Downloads a model **on the cluster**, in a `cpu` job (default `--time 01:00:00`), so that the file never goes through your computer. The ComfyUI button "Download" in the web interface downloads through your browser, onto your machine: use this command (or the Model Manager of ComfyUI-Manager) instead.
+
+- `comfy`: the file at `URL` goes to `~/comfy/ComfyUI/models/KIND`, with `KIND` the models folder shown by ComfyUI: `checkpoints`, `loras`, `vae`, `text_encoders`, `diffusion_models`, ... The file name is the last part of the URL, without its query string; `--filename` overrides it. The URL must be `https://`. The download is done by `comfy-cli model download`.
+- `ollama`: pulls the model `NAME` (for instance `llama3.2:1b`) into `~/.ollama`, with a private Ollama server started on the node for the time of the pull. Without a tag, `:latest` is meant.
+- Safe to repeat: a model that is already there is skipped, **a file is never overwritten** (if a file of the same name has another size, the command stops and asks you to remove it), and a download larger than the free space of the home is refused before it starts. A ComfyUI download whose server does not announce the size runs without that check, and says so.
+- Needs `hpc setup comfy` or `hpc setup ollama` first. Models from sites that require a login (private Hugging Face or CivitAI files) are not supported.
+
+```bash
+hpc model comfy "https://huggingface.co/ORG/REPO/resolve/main/model.safetensors" --to diffusion_models
+hpc model ollama llama3.2:1b
+```
+
 ### `wait`
 
 ```bash
@@ -407,7 +472,79 @@ hpc logs -f
 hpc wait N && hpc pull checkpoints/latest.pt results.csv
 ```
 
-## 8. How it works
+## 8. Interactive services: Jupyter, ComfyUI and Ollama
+
+[`hpc serve`](#serve) runs a server as a Slurm job on a compute node and opens it on `localhost`. The three services below have a preset; anything else goes through `--cmd`.
+
+> [!NOTE]
+> The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options (including `OLLAMA_ORIGINS` for ASP-Chef) come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
+
+| Service   | Needs                      | Start                                       | Address                  | Authentication |
+| --------- | -------------------------- | ------------------------------------------- | ------------------------ | -------------- |
+| `jupyter` | `jupyter` in your login environment | `hpc serve small --time 04:00:00 jupyter`   | `http://localhost:8888`  | token (in the job log) |
+| `comfy`   | `hpc setup comfy`          | `hpc serve small --time 04:00:00 comfy`     | `http://localhost:8188`  | none          |
+| `ollama`  | `hpc setup ollama`         | `hpc serve tiny --time 04:00:00 ollama`     | `http://localhost:11434` | none          |
+
+### One-time setup
+
+1. Connect the VPN and check the access: `hpc doctor`.
+2. Install what is missing, once: `hpc setup` (both) or `hpc setup ollama` / `hpc setup comfy`. It runs in a `cpu` job, prints `ok` or `FAIL` for each component and can be run again safely (see [`setup`](#setup)). ComfyUI with PyTorch takes several gigabytes of the shared `/home`.
+3. Jupyter needs nothing if `jupyter` is already in your login environment: check with `hpc shell cpu --time 00:05:00`, then `command -v jupyter`, then `exit`.
+
+### Starting and stopping
+
+- `hpc serve CLASS --time T SERVICE` prints the job ID and the address, then keeps the tunnel open. **Ctrl-C closes the tunnel and cancels the job.**
+- Choose the class by the GPU memory the model needs (it is in the profile name: `1g.35gb`, `2g.35gb`, `4g.71gb`, `7g.141gb`) and always set the shortest realistic `--time`.
+- By default the job is preemptible: when Slurm preempts it the server stops and the tunnel drops. Use `--booked` for a protected run, if you hold a booking ([section 6](#6-qos-bookings-and-preemption)).
+- The server needs a few seconds after the job starts (up to a minute for ComfyUI): a connection reset at first is normal. Follow the start-up with `hpc logs ID -f`.
+- Another port: `--port N` (for instance when another user already holds the default one on the same node).
+
+### Jupyter
+
+- The token is printed in the job log: run `hpc logs ID` and open the `http://127.0.0.1:8888/lab?token=...` address with `localhost:8888`.
+- The job starts in the project directory on the cluster; add `--push` to sync the current directory first.
+- To offer another conda environment as a kernel, run once inside it (for instance in `hpc shell cpu`): `python -m ipykernel install --user --name NAME`.
+
+### Ollama
+
+- The server listens for the web application `https://asp-chef.alviano.net` (`OLLAMA_ORIGINS`); for another origin use `--cmd` with your own `OLLAMA_ORIGINS`.
+- Models are stored in `~/.ollama` of the shared `/home` and survive from one `serve` to the next; the server does not.
+- Download a model on the cluster with [`hpc model ollama NAME`](#model), then use it through the tunnel, for instance with `curl`:
+
+```bash
+hpc model ollama MODEL
+curl http://localhost:11434/api/generate -d '{"model": "MODEL", "prompt": "Hello", "stream": false}'
+```
+
+### ComfyUI
+
+- ComfyUI starts with ComfyUI-Manager and CORS enabled, in the workspace `~/comfy/ComfyUI`.
+- Models go in `~/comfy/ComfyUI/models/<kind>/` (`checkpoints`, `loras`, `vae`, ...). **Do not use the "Download" button of the web interface**: it downloads to your computer through the browser. Download on the cluster with [`hpc model comfy URL --to KIND`](#model) (the URL is the link icon next to each missing model), or copy a file you already have:
+
+```bash
+hpc model comfy "https://huggingface.co/ORG/REPO/resolve/main/model.safetensors" --to checkpoints
+rsync -avP model.safetensors "$HPC_USER"@hpcgate.unical.it:comfy/ComfyUI/models/checkpoints/
+```
+
+- Check that the models fit the class: the GPU memory of `small` is 33 GB, and a workflow may need more than the sum of its files.
+- Custom nodes installed from the Manager need Internet access from the compute node.
+
+### Security
+
+> [!WARNING]
+> `serve` reaches the node through the head node, so the server listens on **all interfaces** of the node: other users of the cluster network can open the port. Jupyter is protected by its token; **ComfyUI and Ollama have no authentication**. Keep `--time` short, stop the service when you are done and do not process sensitive or personal data with it: the shared `/home` has no confidentiality guarantee.
+
+### Problems
+
+| Symptom                                           | Cause and action                                                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `ended before it started`                         | The job failed at once; read `hpc logs ID` (typically a missing program: run `hpc setup`)              |
+| Connection reset or empty page, tunnel still open | The server is still starting, or it stopped: read `hpc logs ID`. `serve` does not notice a job that dies after the tunnel is open |
+| `hpc setup` prints `FAIL ... cannot reach`        | The compute node has no route to that site; report it to cluster support                               |
+| `ExitOnForwardFailure` or "address already in use" | The local port is taken: use `--port N`                                                               |
+| The server starts and stops at once               | The port is already in use on the node: use `--port N`                                                 |
+
+## 9. How it works
 
 - Each command runs over SSH on `hpcgate.unical.it` after `module load slurm`, so `sbatch`, `squeue`, `sacct` and `scancel` are available.
 - The commands share one SSH connection (`~/.ssh/hpc-*`), which stays open for 10 minutes after the last one, so only the first command pays for connecting. Sessions that need a terminal (`logs -f`, `queue -w`, `wait`, `shell`) and tunnels use a connection of their own.
@@ -423,7 +560,7 @@ templates/job.sbatch    starting point for real jobs, with SIGTERM handling
 tests/test_hpc.sh       offline test suite
 ```
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 Start with `hpc doctor`, which checks the most common causes below.
 
@@ -443,7 +580,7 @@ Start with `hpc doctor`, which checks the most common causes below.
 
 When contacting cluster support, include the job ID, approximate time, the exact `hpc submit` command, the effective QoS and the relevant log excerpt. Never include passwords or tokens.
 
-## 10. Tests
+## 11. Tests
 
 ```bash
 bash tests/test_hpc.sh                          # the hpc command

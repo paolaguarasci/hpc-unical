@@ -48,7 +48,7 @@
           <span class="h-3 w-3 rounded-full bg-accent"></span>
           <span class="ml-3 font-mono text-xs text-mute">~/projects/my-model</span>
         </div>
-        <pre class="overflow-x-auto p-5 font-mono text-[13px] leading-7 text-fg"><span class="text-mute"># copy the project to the cluster</span>
+        <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] p-5 font-mono text-[13px] leading-7 text-fg"><span class="text-mute"># copy the project to the cluster</span>
 <span class="text-accent">$</span> hpc push
 
 <span class="text-mute"># a 2-hour job on a Small GPU slice, restartable</span>
@@ -83,14 +83,14 @@
           <p class="font-display text-6xl font-extrabold text-accent">1</p>
           <h3 class="mt-3 text-xl font-extrabold">Upload your SSH key</h3>
           <p class="mt-2 text-sm text-mute">Once, with the VPN on. The password is asked only this time.</p>
-          <pre class="mt-4 overflow-x-auto rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">ssh-keygen -t ed25519
+          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">ssh-keygen -t ed25519
 ssh-copy-id YOUR_LOGIN@hpcgate.unical.it</pre>
         </article>
         <article class="rounded-2xl border border-line bg-panel/70 p-6">
           <p class="font-display text-6xl font-extrabold text-accent">2</p>
           <h3 class="mt-3 text-xl font-extrabold">Install the command</h3>
           <p class="mt-2 text-sm text-mute">Clone the repository and link <code class="font-mono text-fg">hpc</code> on your PATH.</p>
-          <pre class="mt-4 overflow-x-auto rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">git clone https://github.com/paolaguarasci/hpc-unical
+          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">git clone https://github.com/paolaguarasci/hpc-unical
 cd hpc-unical
 ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
         </article>
@@ -98,14 +98,14 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
           <p class="font-display text-6xl font-extrabold text-accent">3</p>
           <h3 class="mt-3 text-xl font-extrabold">Set your login</h3>
           <p class="mt-2 text-sm text-mute">Kept in a git-ignored <code class="font-mono text-fg">.env</code> file.</p>
-          <pre class="mt-4 overflow-x-auto rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">cp .env.example .env
+          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">cp .env.example .env
 # edit: HPC_USER=your_cluster_login</pre>
         </article>
       </div>
 
       <div class="mt-5 rounded-2xl border border-line bg-panel/70 p-6">
         <h3 class="text-xl font-extrabold">Run the demo</h3>
-        <pre class="mt-4 overflow-x-auto rounded-lg bg-ink/70 p-4 font-mono text-xs leading-7 text-fg sm:text-sm"><span class="text-accent">$</span> hpc qos                                                 <span class="text-mute"># which QoS may you use?</span>
+        <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-4 font-mono text-xs leading-7 text-fg sm:text-sm"><span class="text-accent">$</span> hpc qos                                                 <span class="text-mute"># which QoS may you use?</span>
 <span class="text-accent">$</span> hpc push                                                <span class="text-mute"># copy the project to the cluster</span>
 <span class="text-accent">$</span> hpc submit tiny --time 00:05:00 templates/demo.sbatch   <span class="text-mute"># submit the smoke test</span>
 <span class="text-accent">$</span> hpc queue                                               <span class="text-mute"># PENDING → RUNNING → COMPLETED</span>
@@ -135,6 +135,9 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc cancel ID</td><td class="px-5 py-4 text-fg/90">Cancel a job</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc shell CLASS --time T</td><td class="px-5 py-4 text-fg/90">Interactive shell on a compute node, with the preset of the class</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc tunnel ID PORT</td><td class="px-5 py-4 text-fg/90">Forward a local port to a server run by a job</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc serve CLASS --time T SERVICE</td><td class="px-5 py-4 text-fg/90">Run <code class="font-mono">jupyter</code>, <code class="font-mono">comfy</code> or <code class="font-mono">ollama</code> (or your own server with <code class="font-mono">--cmd</code>) as a job and open it on <code class="font-mono">localhost</code>; Ctrl-C cancels the job</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc setup [ollama] [comfy]</td><td class="px-5 py-4 text-fg/90">Check ollama and ComfyUI on a compute node and install what is missing, software only</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc model comfy URL --to KIND</td><td class="px-5 py-4 text-fg/90">Download a ComfyUI model on the cluster, in a compute job (<code class="font-mono">hpc model ollama NAME</code> for an Ollama model); never overwrites, refuses when space is short</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc wait ID</td><td class="px-5 py-4 text-fg/90">Block until a job ends; succeed only if it completed</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc doctor</td><td class="px-5 py-4 text-fg/90">Check tools, VPN and SSH access, Slurm and the project directory</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc info ID</td><td class="px-5 py-4 text-fg/90">CPU and memory efficiency of a finished job</td></tr>

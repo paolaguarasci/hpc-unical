@@ -24,6 +24,9 @@ _hpc() {
     'cancel:cancel a job'
     'shell:interactive shell on a compute node'
     'tunnel:forward a local port to a job'
+    'serve:run a server as a job and open it on localhost'
+    'setup:check and install ollama and ComfyUI'
+    'model:download a model on the cluster'
     'wait:block until a job ends'
     'doctor:check tools, VPN, SSH and Slurm'
     'info:CPU and memory efficiency of a job'
@@ -35,7 +38,9 @@ _hpc() {
     return
   fi
   case $words[2] in
-    run|sweep|submit|shell) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
+    run|sweep|submit|shell|serve) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
+    setup) _values 'component' ollama comfy ;;
+    model) (( CURRENT == 3 )) && _values 'kind' comfy ollama ;;
     logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;
     pull) _files ;;
   esac

@@ -244,14 +244,230 @@ cmd_logs() {
   remote "cd $(printf %q "$REMOTE_DIR") && ${lookup}f=\$(ls -t $pattern 2>/dev/null | head -n 1); [ -n \"\$f\" ] || { echo 'hpc: no log found' >&2; exit 1; }; echo \"== \$f\"; tail -n 50 $follow \"\$f\""
 }
 
+# Forward localhost:PORT to the same port of NODE, through the head node, until Ctrl-C.
+open_tunnel() { # open_tunnel NODE PORT
+  echo "hpc: localhost:$2 -> $1:$2 (Ctrl-C to close)"
+  ssh -N -o ExitOnForwardFailure=yes -L "$2:$1:$2" "$TARGET"
+}
+
 # Forward localhost:PORT to the same port of the node that runs the job, until Ctrl-C.
 cmd_tunnel() {
   [[ ${1:-} =~ $JOB_ID && ${2:-} =~ ^[0-9]+$ ]] || die "usage: hpc tunnel JOB_ID PORT"
   local node
   node=$(remote "squeue -h -j $1 -o %N") || die "job $1 not found"
   [[ -n $node ]] || die "job $1 is not running on a node"
-  echo "hpc: localhost:$2 -> $node:$2 (Ctrl-C to close)"
-  exec ssh -N -o ExitOnForwardFailure=yes -L "$2:$node:$2" "$TARGET"
+  open_tunnel "$node" "$2"
+}
+
+# Service presets, based on the launcher scripts of Professor Alviano (hpc-jupy.sh, hpc-comfy.sh,
+# hpc-ollama.sh): default port and command (__PORT__ is replaced by the port). The tunnel reaches the
+# node through the head node, not through the node's loopback, so a server must listen on all interfaces.
+service() {
+  case $1 in
+    jupyter) PORT=8888;  SERVICE='exec jupyter lab --no-browser --ip=0.0.0.0 --port=__PORT__' ;;
+    # comfy and ollama are the ones installed by `hpc setup`, called by absolute path.
+    comfy)   PORT=8188;  SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 CONDA_PREFIX=\$HOME/envs/comfy PATH=\$HOME/envs/comfy/bin:\$PATH && comfy-cli set-default ~/comfy/ComfyUI/ --launch-extras='--enable-manager --enable-cors-header --port __PORT__ --listen 0.0.0.0' && exec comfy-cli launch" ;;
+    ollama)  PORT=11434; SERVICE='OLLAMA_ORIGINS=https://asp-chef.alviano.net OLLAMA_HOST=0.0.0.0:__PORT__ OLLAMA_VULKAN=1 exec ~/.local/bin/ollama serve' ;;
+    *) die "unknown service '$1' (jupyter|comfy|ollama, or --cmd)" ;;
+  esac
+}
+
+# What `hpc setup` runs on the compute node: for each component named in "$@", check it, and install it
+# only if it is missing. It never touches what exists, so it can be run again at any time.
+SETUP_SCRIPT=$(cat <<'EOF'
+set -u -o pipefail
+status=0
+ok()   { echo "ok   - $1"; }
+fail() { echo "FAIL - $1: $2"; status=1; }
+online() { curl -fsI --max-time 15 "$1" >/dev/null 2>&1; }
+
+setup_ollama() {
+  local bin=$HOME/.local/bin/ollama
+  if [ -x "$bin" ]; then ok "ollama is installed ($bin)"; return; fi
+  online https://ollama.com || { fail ollama "this node cannot reach ollama.com"; return; }
+  command -v zstd >/dev/null || { fail ollama "zstd is missing on this node"; return; }
+  mkdir -p "$HOME/.local"
+  if curl -fsSL https://ollama.com/download/ollama-linux-amd64.tar.zst | zstd -d | tar -xf - -C "$HOME/.local" && [ -x "$bin" ]
+  then ok "ollama installed in ~/.local"; else fail ollama "download or extraction failed"; fi
+}
+
+setup_comfy() {
+  local env=$HOME/envs/comfy ws=$HOME/comfy
+  # comfy-cli takes its Python from CONDA_PREFIX, which a login shell sets to the conda base; the base cannot
+  # be written, so pip falls back to ~/.local and pollutes it. Point CONDA_PREFIX at the environment and hide
+  # the user site.
+  unset VIRTUAL_ENV
+  export CONDA_PREFIX="$env" PATH="$env/bin:$PATH" PYTHONNOUSERSITE=1
+  has_torch() { "$env/bin/python" -c 'import torch' >/dev/null 2>&1; }
+  if [ -x "$env/bin/comfy-cli" ] && [ -d "$ws/ComfyUI" ] && has_torch; then ok "ComfyUI is installed ($ws/ComfyUI)"; return; fi
+  online https://pypi.org && online https://github.com || { fail comfy "this node cannot reach pypi.org or github.com"; return; }
+  if [ ! -x "$env/bin/comfy-cli" ]; then
+    conda create -y -q -p "$env" python=3.12 && "$env/bin/pip" install -q comfy-cli || { fail comfy "cannot create the environment $env"; return; }
+  fi
+  [ ! -d "$ws/ComfyUI" ] || { fail comfy "$ws/ComfyUI exists but $env has no PyTorch: move $ws aside and run again"; return; }
+  "$env/bin/comfy-cli" --skip-prompt --workspace "$ws/ComfyUI" install --nvidia || { fail comfy "comfy install failed"; return; }
+  has_torch || { fail comfy "PyTorch is not in $env after the install"; return; }
+  ok "ComfyUI installed in ~/comfy/ComfyUI"
+}
+
+for target in "$@"; do "setup_$target"; done
+exit $status
+EOF
+)
+
+# Check ollama and ComfyUI on a compute node and install what is missing (the software only, no models).
+cmd_setup() {
+  local time=01:00:00 targets=()
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time)        time=${2:?--time needs a value}; shift 2 ;;
+      comfy|ollama)  targets+=("$1"); shift ;;
+      *)             die "usage: hpc setup [ollama] [comfy] [--time HH:MM:SS]" ;;
+    esac
+  done
+  [[ ${#targets[@]} -gt 0 ]] || targets=(ollama comfy)
+  cpu_node_run "$time" "$SETUP_SCRIPT" hpc-setup "${targets[@]}"
+}
+
+# Run a bash script (given as text) on a cpu node, with the arguments ARGS; $0 of the script is NAME.
+# Downloads and pip run on a compute node, not on the head node.
+cpu_node_run() { # cpu_node_run TIME SCRIPT NAME [ARGS...]
+  local time=$1 script=$2
+  shift 2
+  resources cpu --time "$time"
+  remote_login "srun $(quote_args "${ARGS[@]}" bash -c "$script" "$@")"
+}
+
+# What `hpc model` runs on the compute node: "comfy URL DIR NAME" or "ollama NAME". It never overwrites a
+# model and refuses when the home has too little free space.
+MODEL_SCRIPT=$(cat <<'EOF'
+set -u -o pipefail
+fail() { echo "FAIL - $1"; return 1; }
+free_bytes() { df -Pk "$HOME" | awk 'NR==2 {print $4 * 1024}'; }
+gb() { awk -v b="$1" 'BEGIN {printf "%.1f GB", b / 1073741824}'; }
+
+model_comfy() {
+  local url=$1 dir=$2 name=$3 ws=$HOME/comfy/ComfyUI size free
+  local target=$ws/models/$dir/$name
+  [ -d "$ws" ] || { fail "ComfyUI is not installed in $ws: run hpc setup comfy"; return 1; }
+  # Size announced by the last response (after the redirects), to compare with the free space.
+  size=$(curl -fsIL --max-time 30 "$url" | tr -d '\r' | awk '/^HTTP/ {s = ""} tolower($1) == "content-length:" {s = $2} END {print s}')
+  free=$(free_bytes)
+  if [ -e "$target" ]; then
+    if [ -n "$size" ] && [ "$(wc -c < "$target" | tr -d ' ')" = "$size" ]; then echo "ok   - $name is already in models/$dir"; return 0; fi
+    fail "$target exists with a different size: remove it and run again"; return 1
+  fi
+  if [ -z "$size" ]; then echo "warn - the server does not announce the size: the free space is not checked"
+  elif [ "$size" -gt "$free" ]; then fail "not enough space: $name needs $(gb "$size"), the home has $(gb "$free") free"; return 1
+  fi
+  echo "free space in the home: $(gb "$free")${size:+; download: $(gb "$size")}"
+  unset VIRTUAL_ENV
+  export CONDA_PREFIX="$HOME/envs/comfy" PYTHONNOUSERSITE=1
+  "$HOME/envs/comfy/bin/comfy-cli" --skip-prompt --workspace "$ws" model download --url "$url" --relative-path "models/$dir" --filename "$name" \
+    && [ -f "$target" ] && echo "ok   - $name is in models/$dir" || { fail "download of $name failed"; return 1; }
+}
+
+model_ollama() {
+  local bin=$HOME/.local/bin/ollama full=$1 port=$((20000 + RANDOM % 20000)) pid i status=1
+  [[ $full == *:* ]] || full=$full:latest
+  [ -x "$bin" ] || { fail "ollama is not installed: run hpc setup ollama"; return 1; }
+  echo "free space in the home: $(gb "$(free_bytes)")"
+  # The client talks to a server: start a private one on this node, for the time of the pull.
+  export OLLAMA_HOST=127.0.0.1:$port
+  "$bin" serve >/dev/null 2>&1 &
+  pid=$!
+  for i in $(seq 30); do curl -fs "http://$OLLAMA_HOST/" >/dev/null 2>&1 && break; sleep 1; done
+  if ! curl -fs "http://$OLLAMA_HOST/" >/dev/null 2>&1; then fail "the ollama server did not start"
+  elif "$bin" list | awk 'NR > 1 {print $1}' | grep -qxF "$full"; then echo "ok   - $full is already installed"; status=0
+  elif "$bin" pull "$full"; then echo "ok   - $full pulled"; status=0
+  else fail "pull of $full failed"; fi
+  kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+  return $status
+}
+
+kind=$1; shift
+"model_$kind" "$@"
+EOF
+)
+
+# Download a model on the cluster: a ComfyUI file by URL into models/KIND, or an Ollama model by name.
+cmd_model() {
+  local time=01:00:00 kind=${1:-} to='' filename='' pos=() name
+  [[ $kind == comfy || $kind == ollama ]] || die "usage: hpc model comfy URL --to KIND [--filename NAME] [--time T] | hpc model ollama NAME [--time T]"
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time)     time=${2:?--time needs a value}; shift 2 ;;
+      --to)       to=${2:?--to needs a value}; shift 2 ;;
+      --filename) filename=${2:?--filename needs a value}; shift 2 ;;
+      -*)         die "unknown option $1" ;;
+      *)          pos+=("$1"); shift ;;
+    esac
+  done
+  [[ ${#pos[@]} -eq 1 ]] || die "name exactly one model ($kind)"
+  if [[ $kind == ollama ]]; then
+    [[ -z $to && -z $filename ]] || die "--to and --filename apply to comfy only"
+    [[ ${pos[0]} =~ ^[A-Za-z0-9._:/-]+$ ]] || die "invalid Ollama model name '${pos[0]}'"
+    cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model ollama "${pos[0]}"
+  else
+    [[ ${pos[0]} =~ ^https://[^[:space:]]+$ ]] || die "the URL must start with https://"
+    [[ $to =~ ^[a-z0-9_]+$ ]] || die "--to needs the models folder (loras, vae, text_encoders, diffusion_models, checkpoints, ...)"
+    name=${filename:-$(basename "${pos[0]%%\?*}")}
+    [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "cannot derive a safe file name from the URL: use --filename"
+    cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model comfy "${pos[0]}" "$to" "$name"
+  fi
+}
+
+# Start a server as a job, wait for its node, expose it on localhost:PORT; Ctrl-C (or a dropped
+# tunnel) cancels the job.
+cmd_serve() {
+  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
+  local class=$1 args=() port='' cmd='' name
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --port) port=${2:?--port needs a value}; shift 2 ;;
+      --cmd)  cmd=${2:?--cmd needs a value}; shift 2 ;;
+      --)     args+=("$@"); break ;;
+      *)      args+=("$1"); shift ;;
+    esac
+  done
+  resources "$class" ${args[@]+"${args[@]}"}
+  [[ $REQUEUE -eq 0 ]] || die "--requeue does not apply to a served process"
+  if [[ -n $cmd ]]; then
+    [[ ${#REST[@]} -eq 0 ]] || die "give either a service or --cmd, not both"
+    [[ -n $port ]] || die "--cmd needs --port"
+    name=custom SERVICE=$cmd
+  else
+    [[ ${#REST[@]} -eq 1 ]] || die "name one service (jupyter|comfy|ollama) or use --cmd"
+    name=${REST[0]}
+    service "$name"
+    port=${port:-$PORT}
+  fi
+  [[ $port =~ ^[0-9]+$ ]] || die "--port needs a number"
+  if [[ $PUSH -eq 1 ]]; then cmd_push; fi
+
+  local out id
+  out=$(remote_login "cd $(printf %q "$REMOTE_DIR") && sbatch --parsable $(quote_args "${ARGS[@]}" --job-name="serve-$name" ${EXTRA[@]+"${EXTRA[@]}"} --wrap="${SERVICE//__PORT__/$port}")")
+  id=${out%%;*}
+  [[ $id =~ $JOB_ID ]] || die "cannot read the job ID from the sbatch output"
+  # Double quotes: $id is local to this function and must be expanded before the trap runs at exit.
+  trap "trap - EXIT; remote 'scancel $id' >/dev/null || true; echo 'hpc: job $id cancelled'" EXIT
+  trap 'exit 130' INT TERM
+
+  local state node last=''
+  while :; do
+    out=$(remote "squeue -h -j $id -o '%T %N'") || die "cannot query job $id"
+    read -r state node <<<"$out" || true
+    [[ -n $state ]] || die "job $id ended before it started (see: hpc logs $id)"
+    [[ $state == RUNNING && -n ${node:-} ]] && break
+    [[ $state == "$last" ]] || echo "hpc: job $id $state"
+    last=$state
+    sleep 5
+  done
+  echo "hpc: job $id runs on $node; the server needs a moment to start (hpc logs $id)"
+  echo "hpc: open http://localhost:$port"
+  open_tunnel "$node" "$port"
 }
 
 # Block until the job (or every task of a job array) ends; succeed only if all of it COMPLETED.
@@ -318,6 +534,16 @@ usage: hpc COMMAND [ARGS]
   shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
+  serve CLASS --time T (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [options] [-- SBATCH_OPTION...]
+                  run a server as a job and open it on localhost:PORT; Ctrl-C cancels the job;
+                  in --cmd, __PORT__ is replaced by the port and the server must listen on 0.0.0.0
+  setup [ollama] [comfy] [--time T]
+                  check ollama (~/.local) and ComfyUI (~/comfy, env ~/envs/comfy) on a cpu node and install
+                  what is missing, software only (default: both; --time default 01:00:00)
+  model comfy URL --to KIND [--filename NAME] [--time T] | model ollama NAME [--time T]
+                  download a model on the cluster, in a cpu job: a ComfyUI file into ~/comfy/ComfyUI/models/KIND
+                  (loras, vae, text_encoders, diffusion_models, ...) or an Ollama model; never overwrites,
+                  refuses when the home has too little free space
   wait ID         block until job ID ends; exit 0 only if it (every task, for an array) COMPLETED
   doctor          check tools, VPN/SSH access, Slurm and the remote project directory
   info ID         CPU and memory efficiency of a finished job (seff)
@@ -342,6 +568,9 @@ case ${1:-help} in
   cancel|c) shift; cmd_cancel "$@" ;;
   shell)  shift; cmd_shell "$@" ;;
   tunnel) shift; cmd_tunnel "$@" ;;
+  serve)  shift; cmd_serve "$@" ;;
+  setup)  shift; cmd_setup "$@" ;;
+  model)  shift; cmd_model "$@" ;;
   wait|w) shift; cmd_wait "$@" ;;
   doctor) cmd_doctor ;;
   info)   shift; cmd_info "$@" ;;

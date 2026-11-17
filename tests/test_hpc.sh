@@ -8,8 +8,9 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/stubs" "$WORK/proj"
 export LOG="$WORK/calls.log"
 for tool in ssh rsync uv osascript; do
-  # STUB_OUT is printed and STUB_EXIT returned, to play the cluster's answer.
-  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\nprintf "%%s" "${STUB_OUT:-}"\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
+  # STUB_OUT is printed and STUB_EXIT returned, to play the cluster's answer; a call to sbatch
+  # prints STUB_SBATCH instead when it is set.
+  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\ncase "$*" in *sbatch*) printf "%%s" "${STUB_SBATCH:-${STUB_OUT:-}}" ;; *) printf "%%s" "${STUB_OUT:-}" ;; esac\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
   chmod +x "$WORK/stubs/$tool"
 done
 export PATH="$WORK/stubs:$PATH"
@@ -137,6 +138,130 @@ STUB_EXIT=1 expect_error "tunnel fails on an unknown job" tunnel 123 8000
 expect_error "tunnel rejects non-numeric job" tunnel abc 8000
 expect_error "tunnel rejects non-numeric port" tunnel 123 http
 expect_error "tunnel needs a port" tunnel 123
+
+# --- setup: check and install ollama and ComfyUI on a cpu node ---
+run setup
+expect_logged "setup runs srun on a cpu node, not on the head node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"
+expect_not_logged "setup asks for no GPU" "--gres"
+expect_logged "setup handles both components by default" "hpc-setup ollama comfy"
+expect_logged "setup downloads ollama" "ollama-linux-amd64.tar.zst"
+expect_logged "setup installs ComfyUI with comfy-cli" "comfy-cli"
+expect_logged "setup keeps the install out of the user site" "PYTHONNOUSERSITE=1"
+expect_logged "setup points comfy-cli at its environment" "CONDA_PREFIX="
+expect_logged "setup installs ComfyUI in ~/comfy/ComfyUI" "--workspace \"\$ws/ComfyUI\""
+run setup comfy --time 00:20:00
+expect_logged "setup takes one component" "hpc-setup comfy"
+expect_logged "setup --time overrides the default" "--time=00:20:00"
+expect_error "setup rejects an unknown component" setup nginx
+expect_error "setup rejects an unknown option" setup --gpu
+STUB_EXIT=1 expect_error "setup fails when the cluster reports a failure" setup ollama
+# The script itself, with the network replaced by a failing curl: it must report FAIL and exit non-zero,
+# and must leave an installed ollama alone.
+mkdir -p "$WORK/fakehome/.local/bin" "$WORK/nonet"
+printf '#!/bin/sh\nexit 22\n' > "$WORK/nonet/curl"; chmod +x "$WORK/nonet/curl"
+script=$(sed -n "/^SETUP_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
+out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x ollama comfy 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - ollama: this node cannot reach ollama.com"* && $out == *"FAIL - comfy: this node cannot reach pypi.org"* ]] && ok "setup script fails explicitly without network" || { fail "setup script fails explicitly without network"; echo "$out"; }
+printf '#!/bin/sh\n' > "$WORK/fakehome/.local/bin/ollama"; chmod +x "$WORK/fakehome/.local/bin/ollama"
+out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x ollama 2>&1); code=$?
+[[ $code -eq 0 && $out == "ok   - ollama is installed"* ]] && ok "setup script leaves an installed ollama alone" || { fail "setup script leaves an installed ollama alone"; echo "$out"; }
+
+# ComfyUI present but the environment without PyTorch (a past install that went to ~/.local): the script
+# must refuse, not report ok and not reinstall over it.
+mkdir -p "$WORK/h2/comfy/ComfyUI" "$WORK/h2/envs/comfy/bin" "$WORK/yes"
+printf '#!/bin/sh\nexit 0\n' > "$WORK/yes/curl"; chmod +x "$WORK/yes/curl"
+printf '#!/bin/sh\n' > "$WORK/h2/envs/comfy/bin/comfy-cli"; printf '#!/bin/sh\nexit 1\n' > "$WORK/h2/envs/comfy/bin/python"
+chmod +x "$WORK/h2/envs/comfy/bin/"*
+out=$(HOME="$WORK/h2" PATH="$WORK/yes:$PATH" bash -c "$script" x comfy 2>&1); code=$?
+[[ $code -ne 0 && $out == *"has no PyTorch"* ]] && ok "setup refuses a ComfyUI whose environment has no PyTorch" || { fail "setup refuses a ComfyUI whose environment has no PyTorch"; echo "$out"; }
+
+# --- model: download a model on the cluster, in a cpu job ---
+run model comfy "https://huggingface.co/x/y/resolve/main/file.safetensors?download=true" --to loras
+expect_logged "model runs in a cpu job on the compute node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"
+expect_not_logged "model asks for no GPU" "--gres"
+expect_logged "model passes the URL, the folder and the file name from the URL" "hpc-model comfy"
+expect_logged "model derives the file name without the query" "loras file.safetensors"
+expect_logged "model uses comfy-cli to download" "comfy-cli"
+run model comfy "https://example.org/a/b.bin" --to vae --filename other.safetensors --time 02:00:00
+expect_logged "model --filename overrides the name" "https://example.org/a/b.bin vae other.safetensors"
+expect_logged "model --time overrides the default" "--time=02:00:00"
+run model ollama llama3.2:1b
+expect_logged "model pulls an Ollama model by name" "hpc-model ollama llama3.2:1b"
+expect_error "model needs a kind" model
+expect_error "model rejects an unknown kind" model nginx x
+expect_error "model comfy needs --to" model comfy https://example.org/a.bin
+expect_error "model comfy rejects a path as --to" model comfy https://example.org/a.bin --to ../x
+expect_error "model comfy needs https" model comfy http://example.org/a.bin --to vae
+expect_error "model comfy rejects an unsafe file name" model comfy "https://example.org/a;b" --to vae
+expect_error "model needs exactly one model" model ollama a b
+expect_error "model ollama takes no --to" model ollama llama3 --to vae
+expect_error "model ollama rejects an invalid name" model ollama 'a b;c'
+STUB_EXIT=1 expect_error "model fails when the cluster reports a failure" model ollama llama3
+# The script itself, run locally with a fake curl, df-independent sizes and a fake comfy-cli.
+mscript=$(sed -n "/^MODEL_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
+mh="$WORK/mh"; mkdir -p "$mh/comfy/ComfyUI/models/loras" "$mh/envs/comfy/bin" "$WORK/cs"
+cat > "$WORK/cs/curl" <<'CURLEOF'
+#!/bin/sh
+printf 'HTTP/2 302\r\ncontent-length: 5\r\n\r\nHTTP/2 200\r\nContent-Length: %s\r\n\r\n' "${STUB_SIZE:-10}"
+CURLEOF
+cat > "$mh/envs/comfy/bin/comfy-cli" <<'CLIEOF'
+#!/bin/sh
+echo "comfy-cli $*" >> "$LOG"
+for a in "$@"; do last=$prev; prev=$a; done
+head -c "${STUB_SIZE:-10}" /dev/zero > "$HOME/comfy/ComfyUI/models/loras/m.bin"
+CLIEOF
+chmod +x "$WORK/cs/curl" "$mh/envs/comfy/bin/comfy-cli"
+URL=https://example.org/m.bin
+: > "$LOG"; out=$(HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $URL loras m.bin 2>&1); code=$?
+[[ $code -eq 0 && $out == *"ok   - m.bin is in models/loras"* ]] && grep -qF -- "model download --url $URL --relative-path models/loras --filename m.bin" "$LOG" && ok "model script downloads through comfy-cli into the right folder" || { fail "model script downloads through comfy-cli into the right folder"; echo "$out"; cat "$LOG"; }
+: > "$LOG"; out=$(HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $URL loras m.bin 2>&1); code=$?
+[[ $code -eq 0 && $out == *"already in models/loras"* && ! -s "$LOG" ]] && ok "model script skips a file of the announced size" || { fail "model script skips a file of the announced size"; echo "$out"; }
+out=$(STUB_SIZE=11 HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $URL loras m.bin 2>&1); code=$?
+[[ $code -ne 0 && $out == *"exists with a different size"* ]] && ok "model script never overwrites a file of another size" || { fail "model script never overwrites a file of another size"; echo "$out"; }
+rm "$mh/comfy/ComfyUI/models/loras/m.bin"
+out=$(STUB_SIZE=99999999999999999 HOME="$mh" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $URL loras m.bin 2>&1); code=$?
+[[ $code -ne 0 && $out == *"not enough space"* && ! -e "$mh/comfy/ComfyUI/models/loras/m.bin" ]] && ok "model script refuses a download larger than the free space" || { fail "model script refuses a download larger than the free space"; echo "$out"; }
+out=$(HOME="$WORK/empty-home" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $URL loras m.bin 2>&1); code=$?
+[[ $code -ne 0 && $out == *"run hpc setup comfy"* ]] && ok "model script asks for hpc setup when ComfyUI is missing" || { fail "model script asks for hpc setup when ComfyUI is missing"; echo "$out"; }
+out=$(HOME="$WORK/empty-home" bash -c "$mscript" x ollama llama3 2>&1); code=$?
+[[ $code -ne 0 && $out == *"run hpc setup ollama"* ]] && ok "model script asks for hpc setup when ollama is missing" || { fail "model script asks for hpc setup when ollama is missing"; echo "$out"; }
+
+# --- serve: a server as a job, opened on localhost, cancelled on exit ---
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --time 02:00:00 jupyter
+expect_logged "serve submits with the class preset" "sbatch --parsable --partition=aiq --qos=scavenger"
+expect_logged "serve names the job after the service" "--job-name=serve-jupyter"
+expect_logged "serve wraps the service command with the port" "--ip=0.0.0.0\\ --port=8888"
+expect_logged "serve polls the state and node of the job" "squeue -h -j 77 -o '%T %N'"
+expect_logged "serve opens the tunnel on the default port" "-L 8888:ainode02:8888 tester@hpcgate.unical.it"
+expect_logged "serve cancels the job when the tunnel ends" "scancel 77"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 ollama --port 9000
+expect_logged "serve --port replaces the default and the placeholder" "OLLAMA_HOST=0.0.0.0:9000"
+expect_logged "serve --port moves the tunnel" "-L 9000:ainode02:9000"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 comfy
+expect_logged "serve comfy listens on its port" "--port\\ 8188"
+expect_logged "serve comfy runs in the environment made by setup" "envs/comfy/bin"
+expect_logged "serve comfy hides the user site" "PYTHONNOUSERSITE=1"
+expect_logged "serve comfy points comfy-cli at its environment" "CONDA_PREFIX=\\\$HOME/envs/comfy"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 ollama
+expect_logged "serve ollama uses the binary installed by setup" ".local/bin/ollama"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 --cmd 'python3 -m http.server __PORT__' --port 8000
+expect_logged "serve --cmd replaces __PORT__" "python3\\ -m\\ http.server\\ 8000"
+expect_logged "serve --cmd names the job" "--job-name=serve-custom"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --free --push --time 01:00:00 jupyter
+expect_logged "serve accepts --free" "hpc-free small"
+expect_logged "serve accepts --push" "rsync -az -e"
+STUB_SBATCH=77 STUB_OUT="" expect_error "serve fails when the job is gone" serve small --time 01:00:00 jupyter
+STUB_SBATCH=77 STUB_OUT="" run serve small --time 01:00:00 jupyter
+expect_logged "serve cancels even when the job vanished" "scancel 77"
+expect_not_logged "serve does not tunnel without a node" "-L 8888"
+STUB_SBATCH=oops expect_error "serve fails when no job ID is returned" serve small --time 01:00:00 jupyter
+expect_error "serve needs a service" serve small --time 01:00:00
+expect_error "serve rejects an unknown service" serve small --time 01:00:00 nginx
+expect_error "serve rejects a service together with --cmd" serve small --time 01:00:00 jupyter --cmd x --port 1
+expect_error "serve --cmd needs --port" serve small --time 01:00:00 --cmd x
+expect_error "serve rejects a non-numeric port" serve small --time 01:00:00 jupyter --port web
+expect_error "serve rejects --requeue" serve small --time 01:00:00 jupyter --requeue
+expect_error "serve requires --time" serve small jupyter
 
 # --- wait ---
 run wait 123
