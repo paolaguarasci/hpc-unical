@@ -48,3 +48,4 @@ $RECYCLE.BIN/
 .impeccable
 # Job logs fetched with `hpc run --pull`
 demo-*.out
+comfy-output
