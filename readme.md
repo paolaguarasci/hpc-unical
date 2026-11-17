@@ -139,6 +139,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc serve CLASS --time T SERVICE`           | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost |
 | `hpc setup [ollama] [comfy]`                 | Check ollama and ComfyUI on a cpu node and install what is missing |
 | `hpc model comfy URL --to KIND`, `hpc model ollama NAME` | Download a model on the cluster, in a cpu job |
+| `hpc model list [comfy\|ollama]`              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
 | `hpc wait ID`                                | Block until job `ID` ends; succeed only if it completed          |
 | `hpc doctor`                                 | Check tools, VPN and SSH access, Slurm and the project directory |
 | `hpc info ID`                                | CPU and memory efficiency of a finished job                      |
@@ -355,16 +356,19 @@ Only the software is installed: no model is downloaded and no custom node is add
 ```bash
 hpc model comfy URL --to KIND [--filename NAME] [--time HH:MM:SS]
 hpc model ollama NAME [--time HH:MM:SS]
+hpc model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]
 ```
 
 Downloads a model **on the cluster**, in a `cpu` job (default `--time 01:00:00`), so that the file never goes through your computer. The ComfyUI button "Download" in the web interface downloads through your browser, onto your machine: use this command (or the Model Manager of ComfyUI-Manager) instead.
 
-- `comfy`: the file at `URL` goes to `~/comfy/ComfyUI/models/KIND`, with `KIND` the models folder shown by ComfyUI: `checkpoints`, `loras`, `vae`, `text_encoders`, `diffusion_models`, ... The file name is the last part of the URL, without its query string; `--filename` overrides it. The URL must be `https://`. The download is done by `comfy-cli model download`.
+- `comfy`: the file at `URL` goes to `~/comfy/ComfyUI/models/KIND`, with `KIND` the models folder shown by ComfyUI: `checkpoints`, `loras`, `vae`, `text_encoders`, `diffusion_models`, ... The file name is the last part of the URL, without its query string; `--filename` overrides it. The URL must be `https://`, and `KIND` a folder under `models/`, with sub-folders if needed (`loras`, `diffusion_models/FLUX1`, ...), never starting a segment with a dot. The download is done by `comfy-cli model download`.
 - `ollama`: pulls the model `NAME` (for instance `llama3.2:1b`) into `~/.ollama`, with a private Ollama server started on the node for the time of the pull. Without a tag, `:latest` is meant.
 - Safe to repeat: a model that is already there is skipped, **a file is never overwritten** (if a file of the same name has another size, the command stops and asks you to remove it), and a download larger than the free space of the home is refused before it starts. A ComfyUI download whose server does not announce the size runs without that check, and says so.
+- `list`: shows the ComfyUI models of the catalogue of ComfyUI-Manager (about 500: type, target folder, size, name and file) and the Ollama models installed, with `[x]` on those already present and `[ ]` on the others. `--type lora` keeps one catalogue type, `--filter flux` the models whose name, file, base or folder contains the text (case-insensitive), `--urls` adds the download URL to give to `hpc model comfy`. The folder of a row is the value for `--to` (it may have sub-folders, such as `diffusion_models/FLUX1`). It reads files on the head node and starts no job. A ComfyUI model is "present" when its file is in that exact folder under `~/comfy/ComfyUI/models`. The catalogue is not complete (recent models may be missing: use the URL of the model directly), and for Ollama only the installed models are listed, because the catalogue of [ollama.com/library](https://ollama.com/library) has no official API.
 - Needs `hpc setup comfy` or `hpc setup ollama` first. Models from sites that require a login (private Hugging Face or CivitAI files) are not supported.
 
 ```bash
+hpc model list comfy --type lora --filter flux --urls          # what exists, what is already there
 hpc model comfy "https://huggingface.co/ORG/REPO/resolve/main/model.safetensors" --to diffusion_models
 hpc model ollama llama3.2:1b
 ```

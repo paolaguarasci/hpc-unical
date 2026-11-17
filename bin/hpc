@@ -363,6 +363,7 @@ model_comfy() {
   echo "free space in the home: $(gb "$free")${size:+; download: $(gb "$size")}"
   unset VIRTUAL_ENV
   export CONDA_PREFIX="$HOME/envs/comfy" PYTHONNOUSERSITE=1
+  mkdir -p "$ws/models/$dir"
   "$HOME/envs/comfy/bin/comfy-cli" --skip-prompt --workspace "$ws" model download --url "$url" --relative-path "models/$dir" --filename "$name" \
     && [ -f "$target" ] && echo "ok   - $name is in models/$dir" || { fail "download of $name failed"; return 1; }
 }
@@ -390,10 +391,29 @@ kind=$1; shift
 EOF
 )
 
+# List the ComfyUI models of the ComfyUI-Manager catalogue and the Ollama models installed, marking those
+# present. Reads files only, so it runs on the head node; the script is remote/model_list.py.
+cmd_model_list() {
+  local target=all type='' text='' urls=0
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      comfy|ollama) target=$1; shift ;;
+      --type)       type=${2:?--type needs a value}; shift 2 ;;
+      --filter)     text=${2:?--filter needs a value}; shift 2 ;;
+      --urls)       urls=1; shift ;;
+      *)            die "usage: hpc model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]" ;;
+    esac
+  done
+  [[ -z $type || $target != ollama ]] || die "--type applies to the ComfyUI catalogue only"
+  # The environment of hpc setup has the catalogue; without it the script says so (and still lists Ollama).
+  on_cluster "py=\$HOME/envs/comfy/bin/python; [ -x \"\$py\" ] || py=python3; PYTHONNOUSERSITE=1 \"\$py\" - $(quote_args "$target" "$type" "$text" "$urls")" < "$ROOT/remote/model_list.py"
+}
+
 # Download a model on the cluster: a ComfyUI file by URL into models/KIND, or an Ollama model by name.
 cmd_model() {
   local time=01:00:00 kind=${1:-} to='' filename='' pos=() name
-  [[ $kind == comfy || $kind == ollama ]] || die "usage: hpc model comfy URL --to KIND [--filename NAME] [--time T] | hpc model ollama NAME [--time T]"
+  if [[ $kind == list ]]; then shift; cmd_model_list "$@"; return; fi
+  [[ $kind == comfy || $kind == ollama ]] || die "usage: hpc model comfy URL --to KIND [--filename NAME] [--time T] | hpc model ollama NAME [--time T] | hpc model list [comfy|ollama]"
   shift
   while [[ $# -gt 0 ]]; do
     case $1 in
@@ -411,7 +431,8 @@ cmd_model() {
     cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model ollama "${pos[0]}"
   else
     [[ ${pos[0]} =~ ^https://[^[:space:]]+$ ]] || die "the URL must start with https://"
-    [[ $to =~ ^[a-z0-9_]+$ ]] || die "--to needs the models folder (loras, vae, text_encoders, diffusion_models, checkpoints, ...)"
+    # A folder under models/, possibly with sub-folders (diffusion_models/FLUX1); no segment may start with "."
+    [[ $to =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$ ]] || die "--to needs a folder under models/ (loras, vae, diffusion_models/FLUX1, ...), see: hpc model list"
     name=${filename:-$(basename "${pos[0]%%\?*}")}
     [[ $name =~ ^[A-Za-z0-9._-]+$ ]] || die "cannot derive a safe file name from the URL: use --filename"
     cpu_node_run "$time" "$MODEL_SCRIPT" hpc-model comfy "${pos[0]}" "$to" "$name"
@@ -544,6 +565,9 @@ usage: hpc COMMAND [ARGS]
                   download a model on the cluster, in a cpu job: a ComfyUI file into ~/comfy/ComfyUI/models/KIND
                   (loras, vae, text_encoders, diffusion_models, ...) or an Ollama model; never overwrites,
                   refuses when the home has too little free space
+  model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]
+                  ComfyUI models of the ComfyUI-Manager catalogue and the Ollama models installed,
+                  with [x] on those already present (reads the head node; no job)
   wait ID         block until job ID ends; exit 0 only if it (every task, for an array) COMPLETED
   doctor          check tools, VPN/SSH access, Slurm and the remote project directory
   info ID         CPU and memory efficiency of a finished job (seff)

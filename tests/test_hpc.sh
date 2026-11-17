@@ -226,6 +226,57 @@ out=$(HOME="$WORK/empty-home" PATH="$WORK/cs:$PATH" bash -c "$mscript" x comfy $
 out=$(HOME="$WORK/empty-home" bash -c "$mscript" x ollama llama3 2>&1); code=$?
 [[ $code -ne 0 && $out == *"run hpc setup ollama"* ]] && ok "model script asks for hpc setup when ollama is missing" || { fail "model script asks for hpc setup when ollama is missing"; echo "$out"; }
 
+# --- model list: the catalogue and what is present, read on the head node ---
+run model list
+expect_logged "model list runs a script on the head node, not in a job" "PYTHONNOUSERSITE=1 \"\$py\" -"
+expect_not_logged "model list starts no job" "srun"
+expect_logged "model list passes target, type, text and urls" "- all '' '' 0"
+run model list comfy --type lora --filter flux --urls
+expect_logged "model list passes its filters" "- comfy lora flux 1"
+run model list ollama
+expect_logged "model list can be limited to Ollama" "- ollama '' '' 0"
+expect_error "model list rejects an unknown option" model list --bogus
+expect_error "model list rejects --type for Ollama" model list ollama --type lora
+run model comfy "https://example.org/a.bin" --to diffusion_models/FLUX1
+expect_logged "model comfy accepts a sub-folder" "hpc-model comfy"
+expect_error "model comfy rejects .. in --to" model comfy https://example.org/a.bin --to a/../b
+expect_error "model comfy rejects an absolute --to" model comfy https://example.org/a.bin --to /etc
+expect_error "model comfy rejects a hidden folder in --to" model comfy https://example.org/a.bin --to .ssh
+# The Python script, run locally on a fake home, a fake catalogue and a fake Ollama store.
+lh="$WORK/lh"; mkdir -p "$lh/comfy/ComfyUI/models/loras" "$lh/comfy/ComfyUI/models/diffusion_models/FLUX1" "$WORK/fake/comfyui_manager"
+printf 'x' > "$lh/comfy/ComfyUI/models/loras/have.safetensors"
+printf 'x' > "$lh/comfy/ComfyUI/models/diffusion_models/FLUX1/flux.safetensors"
+cat > "$WORK/fake/comfyui_manager/__init__.py" <<'PYEOF2'
+PYEOF2
+cat > "$WORK/fake/comfyui_manager/model-list.json" <<'JSONEOF'
+{"models": [
+ {"name": "Have LoRA", "type": "lora", "base": "SDXL", "save_path": "loras", "filename": "have.safetensors", "url": "https://e.org/have", "size": "1.0GB"},
+ {"name": "Missing LoRA", "type": "lora", "base": "SD1.5", "save_path": "loras", "filename": "miss.safetensors", "url": "https://e.org/miss", "size": "2.0GB"},
+ {"name": "Flux", "type": "diffusion_model", "base": "FLUX.1", "save_path": "diffusion_models/FLUX1", "filename": "flux.safetensors", "url": "https://e.org/flux", "size": "20GB"},
+ {"name": "A VAE", "type": "VAE", "base": "SD", "save_path": "default", "filename": "vae.pt", "url": "https://e.org/vae", "size": "300MB"}
+]}
+JSONEOF
+mkdir -p "$lh/.ollama/models/manifests/registry.ollama.ai/library/llama3" "$lh/.ollama/models/manifests/registry.ollama.ai/someone/tool"
+echo '{"config": {"size": 10}, "layers": [{"size": 1073741814}]}' > "$lh/.ollama/models/manifests/registry.ollama.ai/library/llama3/8b"
+echo '{"config": {"size": 1}, "layers": [{"size": 2}]}' > "$lh/.ollama/models/manifests/registry.ollama.ai/someone/tool/latest"
+mlist() { HOME="$lh" PYTHONPATH="$WORK/fake" python3 "$ROOT/remote/model_list.py" "$@" 2>&1; }
+out=$(mlist all "" "" 0)
+[[ $out == *"[x]"*"Have LoRA"* && $out == *"[ ]"*"Missing LoRA"* ]] && ok "model list marks the models already present" || { fail "model list marks the models already present"; echo "$out"; }
+[[ $out == *"[x]"*"diffusion_models/FLUX1"*"Flux"* ]] && ok "model list checks the file in the sub-folder of the catalogue" || { fail "model list checks the file in the sub-folder of the catalogue"; echo "$out"; }
+[[ $out == *"4 models, 2 present"* ]] && ok "model list counts the models and the present ones" || { fail "model list counts the models and the present ones"; echo "$out"; }
+[[ $out == *"upscale_models"* || $out == *"vae"*"A VAE"* ]] && ok "model list resolves the default folder by type" || { fail "model list resolves the default folder by type"; echo "$out"; }
+[[ $out == *"1.0 GB"*"llama3:8b"* && $out == *"someone/tool:latest"* && $out == *"2 models installed"* ]] && ok "model list shows the Ollama models installed, with namespace and size" || { fail "model list shows the Ollama models installed, with namespace and size"; echo "$out"; }
+out=$(mlist comfy lora "" 0)
+[[ $out == *"2 models, 1 present"* && $out != *"Flux"* ]] && ok "model list --type keeps one catalogue type" || { fail "model list --type keeps one catalogue type"; echo "$out"; }
+out=$(mlist comfy "" "FLUX" 0)
+[[ $out == *"1 models, 1 present"* ]] && ok "model list --filter is case-insensitive and searches name, base and file" || { fail "model list --filter is case-insensitive and searches name, base and file"; echo "$out"; }
+out=$(mlist comfy "" "" 1)
+[[ $out == *"https://e.org/miss"* ]] && ok "model list --urls adds the download URL" || { fail "model list --urls adds the download URL"; echo "$out"; }
+out=$(HOME="$WORK/empty-home" python3 "$ROOT/remote/model_list.py" comfy "" "" 0 2>&1); code=$?
+[[ $code -ne 0 && $out == *"run hpc setup comfy"* ]] && ok "model list asks for hpc setup when ComfyUI-Manager is missing" || { fail "model list asks for hpc setup when ComfyUI-Manager is missing"; echo "$out"; }
+out=$(HOME="$WORK/empty-home" python3 "$ROOT/remote/model_list.py" ollama "" "" 0 2>&1); code=$?
+[[ $code -eq 0 && $out == *"0 models installed"* ]] && ok "model list handles an empty Ollama store" || { fail "model list handles an empty Ollama store"; echo "$out"; }
+
 # --- serve: a server as a job, opened on localhost, cancelled on exit ---
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --time 02:00:00 jupyter
 expect_logged "serve submits with the class preset" "sbatch --parsable --partition=aiq --qos=scavenger"
