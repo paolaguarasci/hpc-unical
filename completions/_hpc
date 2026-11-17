@@ -27,6 +27,7 @@ _hpc() {
     'serve:run a server as a job and open it on localhost'
     'setup:check and install ollama and ComfyUI'
     'model:download a model on the cluster'
+    'download:copy ComfyUI results to this machine'
     'wait:block until a job ends'
     'doctor:check tools, VPN, SSH and Slurm'
     'info:CPU and memory efficiency of a job'
@@ -43,6 +44,7 @@ _hpc() {
     model) (( CURRENT == 3 )) && _values 'kind' comfy ollama list template || { [[ $words[3] == list ]] && _values 'target' comfy ollama; } ;;
     logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;
     pull) _files ;;
+    download) (( CURRENT == 3 )) && _values 'target' comfy ;;
   esac
 }
 

@@ -329,6 +329,40 @@ cmd_setup() {
   cpu_node_run "$time" "$SETUP_SCRIPT" hpc-setup "${targets[@]}"
 }
 
+# Fetch results from the cluster. For comfy: the ComfyUI output folder, everything new (rsync skips what is
+# already there and never deletes), some files by PATH (relative to that folder), or the N most recent.
+cmd_download() {
+  [[ ${1:-} == comfy ]] || die "usage: hpc download comfy [--to DIR] [--latest N] [PATH...]"
+  shift
+  local dest=comfy-output latest='' files=() p listed sources=() src=comfy/ComfyUI/output
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --to)     dest=${2:?--to needs a value}; shift 2 ;;
+      --latest) latest=${2:?--latest needs a value}; shift 2 ;;
+      -*)       die "unknown option $1" ;;
+      *)        files+=("$1"); shift ;;
+    esac
+  done
+  [[ -z $latest || $latest =~ ^[1-9][0-9]*$ ]] || die "--latest needs a number greater than 0"
+  [[ -z $latest || ${#files[@]} -eq 0 ]] || die "--latest and PATH exclude each other"
+  if [[ -n $latest ]]; then
+    listed=$(on_cluster "cd $src && find . -type f ! -name '.*' ! -name '_output_*' -printf '%T@ %P\\n' | sort -rn | head -n $latest | cut -d' ' -f2-")
+    [[ -n $listed ]] || die "no output files on the cluster"
+    while IFS= read -r p; do files+=("$p"); done <<< "$listed"
+  fi
+  # Paths inside the output folder, with no space (the remote shell would split it) and no ".." (no segment starts with a dot).
+  for p in ${files[@]+"${files[@]}"}; do
+    [[ $p =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)*$ ]] || die "invalid path '$p': a file or folder inside the output folder, without spaces"
+  done
+  mkdir -p "$dest"
+  if [[ ${#files[@]} -eq 0 ]]; then
+    rsync -aP -e "ssh ${SHARED[*]}" --exclude _output_images_will_be_put_here "$TARGET:$src/" "$dest/"
+  else
+    for p in "${files[@]}"; do sources+=("$TARGET:$src/./$p"); done
+    rsync -aPR -e "ssh ${SHARED[*]}" "${sources[@]}" "$dest/"
+  fi
+}
+
 # Run a bash script (given as text) on a cpu node, with the arguments ARGS; $0 of the script is NAME.
 # Downloads and pip run on a compute node, not on the head node.
 cpu_node_run() { # cpu_node_run TIME SCRIPT NAME [ARGS...]
@@ -654,6 +688,9 @@ usage: hpc COMMAND [ARGS]
   model template NAME | model template list [--filter TEXT]
                   the same for a ComfyUI template installed on the cluster, by name; the list shows how many of
                   the models of each template are present
+  download comfy [--to DIR] [--latest N] [PATH...]
+                  copy the results of ComfyUI (~/comfy/ComfyUI/output) to DIR (default ./comfy-output): all that
+                  is new, or the PATHs given (inside that folder), or the N most recent; never deletes
   model list [comfy|ollama] [--type TYPE] [--filter TEXT] [--urls]
                   ComfyUI models of the ComfyUI-Manager catalogue and the Ollama models installed,
                   with [x] on those already present (reads the head node; no job)
@@ -684,6 +721,7 @@ case ${1:-help} in
   serve)  shift; cmd_serve "$@" ;;
   setup)  shift; cmd_setup "$@" ;;
   model)  shift; cmd_model "$@" ;;
+  download) shift; cmd_download "$@" ;;
   wait|w) shift; cmd_wait "$@" ;;
   doctor) cmd_doctor ;;
   info)   shift; cmd_info "$@" ;;

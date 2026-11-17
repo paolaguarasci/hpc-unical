@@ -372,6 +372,31 @@ out=$(wm models template nope); code=$?
 out=$(HOME="$th" python3 -c "$(cat "$ROOT/remote/workflow_models.py")" models template x 2>&1)
 [[ $out == *"run hpc setup comfy"* ]] && ok "workflow script asks for hpc setup when the templates are missing" || { fail "workflow script asks for hpc setup when the templates are missing"; echo "$out"; }
 
+# --- download: copy the ComfyUI results to this machine ---
+run download comfy
+expect_logged "download copies the output folder of ComfyUI" "rsync -aP -e"
+expect_logged "download reads the ComfyUI output folder" "tester@hpcgate.unical.it:comfy/ComfyUI/output/ comfy-output/"
+expect_not_logged "download never deletes" "--delete"
+[[ -d "$WORK/proj/comfy-output" ]] && ok "download creates the destination folder" || fail "download creates the destination folder"
+run download comfy --to "$WORK/x-out"
+expect_logged "download --to chooses the destination" "x-out/"
+run download comfy video/a.mp4 b.png
+expect_logged "download PATH copies only those files" "output/./video/a.mp4"
+expect_logged "download keeps the folders of the paths" "rsync -aPR"
+expect_logged "download copies every PATH given" "output/./b.png"
+STUB_OUT=$'video/new.mp4\nold.png' run download comfy --latest 2
+expect_logged "download --latest asks the cluster for the newest files" "head -n 2"
+expect_logged "download --latest copies what the cluster listed" "output/./video/new.mp4"
+STUB_OUT="" expect_error "download --latest fails when there are no files" download comfy --latest 1
+expect_error "download rejects an unknown target" download ollama
+expect_error "download rejects a path with .." download comfy ../x
+expect_error "download rejects an absolute path" download comfy /etc/passwd
+expect_error "download rejects a path with a space" download comfy "a b.mp4"
+expect_error "download rejects --latest with a path" download comfy --latest 2 a.mp4
+expect_error "download rejects a bad --latest" download comfy --latest x
+expect_error "download rejects an unknown option" download comfy --bogus
+rm -rf "$WORK/proj/comfy-output"
+
 # --- serve: a server as a job, opened on localhost, cancelled on exit ---
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --time 02:00:00 jupyter
 expect_logged "serve submits with the class preset" "sbatch --parsable --partition=aiq --qos=scavenger"

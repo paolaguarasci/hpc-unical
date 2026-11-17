@@ -63,6 +63,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`serve`](#serve)
     - [`setup`](#setup)
     - [`model`](#model)
+    - [`download`](#download)
     - [`wait`](#wait)
     - [`doctor`](#doctor)
     - [`info`](#info)
@@ -393,6 +394,26 @@ hpc model template video_minimax_h3_i2v                            # the models 
 hpc model ollama llama3.2:1b
 ```
 
+### `download`
+
+```bash
+hpc download comfy [--to DIR] [--latest N] [PATH...]
+```
+
+Copies the results of ComfyUI from `~/comfy/ComfyUI/output` on the cluster to `DIR` on this machine (default `./comfy-output`, created if missing; run it from where you want the files). It uses `rsync`: a file already there is skipped, **nothing is ever deleted**, either here or on the cluster, and an interrupted copy resumes. Videos and images are already compressed, so they are sent without further compression.
+
+- no arguments: everything that is new;
+- `PATH...`: only those files or folders, given relative to the output folder (for instance `video/MiniMax_H3_00001_.mp4`), with their folders kept; a path may not contain spaces or `..`;
+- `--latest N`: the `N` most recent files (the cluster is asked for their names first); not to be combined with `PATH`.
+
+```bash
+hpc download comfy --latest 1                 # the last video you generated
+hpc download comfy                            # everything new
+hpc download comfy video/MiniMax_H3_00001_.mp4 --to ~/Videos/comfy
+```
+
+It reads files only: it does not need the ComfyUI job to be running, so the results can be fetched after `serve` has been stopped.
+
 ### `wait`
 
 ```bash
@@ -569,6 +590,7 @@ When a workflow is opened in ComfyUI, the panel "Missing models" lists the files
 5. In the ComfyUI page, press the refresh icon of the "Missing models" panel (or reload the page): the models are now found. If ComfyUI was started before the download, a model list that stays stale is cured by reloading the page.
 6. Run the workflow on a class whose GPU memory holds the models: the GPU memory of each class is in its profile name (`small` has 33 GB; `medium` 71 GB). The sum of the model files is a lower bound of what is needed.
 
+- The results (videos, images) are written on the cluster, in `~/comfy/ComfyUI/output` (the video workflows use the `video/` sub-folder). To see them, use the `Save Video` node of the workflow, the queue panel (button in the top right, "Completed" tab) or the "Assets" tab; to copy them to your machine use [`hpc download comfy`](#download), for instance `hpc download comfy --latest 1`.
 - Custom nodes installed from the Manager need Internet access from the compute node.
 
 ### Security
