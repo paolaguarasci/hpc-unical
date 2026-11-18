@@ -152,6 +152,9 @@ expect_logged "setup installs ComfyUI in ~/comfy/ComfyUI" "--workspace \"\$ws/Co
 run setup comfy --time 00:20:00
 expect_logged "setup takes one component" "hpc-setup comfy"
 expect_logged "setup --time overrides the default" "--time=00:20:00"
+run setup vllm tensorboard
+expect_logged "setup takes vllm and tensorboard" "hpc-setup vllm tensorboard"
+expect_logged "setup installs vllm with pip in its own environment" "pip\" install -q \"\$pkg\""
 expect_error "setup rejects an unknown component" setup nginx
 expect_error "setup rejects an unknown option" setup --gpu
 STUB_EXIT=1 expect_error "setup fails when the cluster reports a failure" setup ollama
@@ -165,6 +168,12 @@ out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x ollama 
 printf '#!/bin/sh\n' > "$WORK/fakehome/.local/bin/ollama"; chmod +x "$WORK/fakehome/.local/bin/ollama"
 out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x ollama 2>&1); code=$?
 [[ $code -eq 0 && $out == "ok   - ollama is installed"* ]] && ok "setup script leaves an installed ollama alone" || { fail "setup script leaves an installed ollama alone"; echo "$out"; }
+
+out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x vllm tensorboard 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - vllm: this node cannot reach pypi.org"* && $out == *"FAIL - tensorboard: this node cannot reach pypi.org"* ]] && ok "setup script fails explicitly for vllm and tensorboard without network" || { fail "setup script fails explicitly for vllm and tensorboard without network"; echo "$out"; }
+mkdir -p "$WORK/h3/envs/vllm/bin"; printf '#!/bin/sh\n' > "$WORK/h3/envs/vllm/bin/vllm"; chmod +x "$WORK/h3/envs/vllm/bin/vllm"
+out=$(HOME="$WORK/h3" PATH="$WORK/nonet:$PATH" bash -c "$script" x vllm 2>&1); code=$?
+[[ $code -eq 0 && $out == "ok   - vllm is installed"* ]] && ok "setup script leaves an installed vllm alone" || { fail "setup script leaves an installed vllm alone"; echo "$out"; }
 
 # ComfyUI present but the environment without PyTorch (a past install that went to ~/.local): the script
 # must refuse, not report ok and not reinstall over it.
@@ -417,6 +426,19 @@ STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 ollama
 expect_logged "serve ollama uses the binary installed by setup" ".local/bin/ollama"
 expect_logged "serve ollama allows only local origins" "OLLAMA_ORIGINS=http://localhost"
 expect_not_logged "serve ollama no longer allows ASP-Chef" "alviano.net"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B
+expect_logged "serve vllm serves the model given" "vllm\\ serve\\ Qwen/Qwen3-8B"
+expect_logged "serve vllm listens on all interfaces on its port" "--host\\ 0.0.0.0\\ --port\\ 8000"
+expect_logged "serve vllm runs in the environment made by setup" "envs/vllm/bin"
+expect_logged "serve vllm opens the tunnel on port 8000" "-L 8000:ainode02:8000"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard runs
+expect_logged "serve tensorboard reads the log directory given" "--logdir\\ runs"
+expect_logged "serve tensorboard listens on its port" "--port\\ 6006"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard
+expect_logged "serve tensorboard defaults to the project directory" "--logdir\\ ."
+expect_error "serve vllm needs a model" serve medium --time 01:00:00 vllm
+expect_error "serve rejects an argument for a service that takes none" serve small --time 01:00:00 jupyter extra
+expect_error "serve rejects two arguments for vllm" serve medium --time 01:00:00 vllm a b
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 --cmd 'python3 -m http.server __PORT__' --port 8000
 expect_logged "serve --cmd replaces __PORT__" "python3\\ -m\\ http.server\\ 8000"
 expect_logged "serve --cmd names the job" "--job-name=serve-custom"

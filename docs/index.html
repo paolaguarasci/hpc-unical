@@ -27,8 +27,7 @@
     <!-- Hero -->
     <section class="mx-auto grid max-w-6xl gap-12 px-4 pb-20 pt-12 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:pt-20">
       <div>
-        <p class="reveal d1 font-mono text-xs uppercase tracking-[0.25em] text-accent">Unofficial · open source · MIT</p>
-        <h1 class="reveal d2 mt-5 font-display text-7xl font-extrabold leading-[0.9] tracking-tight sm:text-8xl lg:text-[9rem]">hpc</h1>
+        <h1 class="reveal d2 font-display text-7xl font-extrabold leading-[0.9] tracking-tight sm:text-8xl lg:text-[9rem]">hpc</h1>
         <p class="reveal d3 mt-6 max-w-xl text-2xl font-extralight leading-snug text-fg/90 sm:text-3xl">
           One command for the <span class="font-extrabold text-accent">UniCal HPC cluster</span>.
         </p>
@@ -39,6 +38,7 @@
           <a href="#quick-start" class="rounded-full bg-accent px-6 py-3 text-sm font-extrabold text-ink hover:brightness-110">Get started</a>
           <a href="https://github.com/paolaguarasci/hpc-unical" class="rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent">View on GitHub</a>
         </div>
+        <p class="reveal d5 mt-6 font-mono text-xs text-mute">Unofficial · open source · MIT</p>
       </div>
 
       <div class="reveal d4 self-center overflow-hidden rounded-2xl border border-line bg-panel/80 shadow-2xl shadow-black/40 backdrop-blur">
@@ -64,8 +64,7 @@
     <!-- VPN notice -->
     <section class="mx-auto max-w-6xl px-4 sm:px-6">
       <div class="rounded-2xl border border-accent/40 bg-accent/5 p-6 sm:p-8">
-        <p class="font-mono text-xs uppercase tracking-[0.25em] text-accent">Before you start</p>
-        <h2 class="mt-3 font-display text-3xl font-extrabold sm:text-4xl">The university VPN is required.</h2>
+        <h2 class="font-display text-3xl font-extrabold sm:text-4xl">The university VPN is required.</h2>
         <p class="mt-3 max-w-3xl text-mute">
           The cluster head node is reachable only through the university OpenVPN, which must be active every time you run <code class="font-mono text-fg">hpc</code>.
           The OpenVPN configuration is not distributed with this tool: <strong class="font-semibold text-fg">request it through UniTicket</strong>.
@@ -135,8 +134,8 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc cancel ID</td><td class="px-5 py-4 text-fg/90">Cancel a job</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc shell CLASS --time T</td><td class="px-5 py-4 text-fg/90">Interactive shell on a compute node, with the preset of the class</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc tunnel ID PORT</td><td class="px-5 py-4 text-fg/90">Forward a local port to a server run by a job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc serve CLASS --time T SERVICE</td><td class="px-5 py-4 text-fg/90">Run <code class="font-mono">jupyter</code>, <code class="font-mono">comfy</code> or <code class="font-mono">ollama</code> (or your own server with <code class="font-mono">--cmd</code>) as a job and open it on <code class="font-mono">localhost</code>; Ctrl-C cancels the job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc setup [ollama] [comfy]</td><td class="px-5 py-4 text-fg/90">Check ollama and ComfyUI on a compute node and install what is missing, software only</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc serve CLASS --time T SERVICE</td><td class="px-5 py-4 text-fg/90">Run <code class="font-mono">jupyter</code>, <code class="font-mono">comfy</code>, <code class="font-mono">ollama</code>, <code class="font-mono">vllm MODEL</code> or <code class="font-mono">tensorboard</code> (or your own server with <code class="font-mono">--cmd</code>) as a job and open it on <code class="font-mono">localhost</code>; Ctrl-C cancels the job</td></tr>
+            <tr><td class="px-5 py-4 font-mono text-accent">hpc setup [ollama] [comfy] [vllm] [tensorboard]</td><td class="px-5 py-4 text-fg/90">Check ollama, ComfyUI, vLLM and TensorBoard on a compute node and install what is missing, software only</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc model comfy URL --to KIND</td><td class="px-5 py-4 text-fg/90">Download ComfyUI models on the cluster, in one compute job (several URLs, a <code class="font-mono">--to</code> folder for those that follow) (<code class="font-mono">hpc model ollama NAME</code> for an Ollama model); never overwrites, refuses when space is short</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc model list [comfy|ollama]</td><td class="px-5 py-4 text-fg/90">List the downloadable ComfyUI models (about 500) and the Ollama models installed, marking those already present; <code class="font-mono">--type</code>, <code class="font-mono">--filter</code> and <code class="font-mono">--urls</code> are optional</td></tr>
             <tr><td class="px-5 py-4 font-mono text-accent">hpc model template NAME</td><td class="px-5 py-4 text-fg/90">Download all the models that a ComfyUI template declares, with no URL to copy; <code class="font-mono">hpc model template list</code> shows which are present, <code class="font-mono">hpc model comfy --workflow FILE</code> does the same for your own workflow file</td></tr>

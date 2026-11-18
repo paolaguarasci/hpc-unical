@@ -262,13 +262,20 @@ cmd_tunnel() {
 # Service presets, based on the launcher scripts of Professor Alviano (hpc-jupy.sh, hpc-comfy.sh,
 # hpc-ollama.sh): default port and command (__PORT__ is replaced by the port). The tunnel reaches the
 # node through the head node, not through the node's loopback, so a server must listen on all interfaces.
+# vllm and tensorboard are not from those scripts: they take one argument ($2), the model and the log directory,
+# and run from their own environments made by `hpc setup`.
 service() {
   case $1 in
     jupyter) PORT=8888;  SERVICE='exec jupyter lab --no-browser --ip=0.0.0.0 --port=__PORT__' ;;
     # comfy and ollama are the ones installed by `hpc setup`, called by absolute path.
     comfy)   PORT=8188;  SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 CONDA_PREFIX=\$HOME/envs/comfy PATH=\$HOME/envs/comfy/bin:\$PATH && comfy-cli set-default ~/comfy/ComfyUI/ --launch-extras='--enable-manager --enable-cors-header --port __PORT__ --listen 0.0.0.0' && exec comfy-cli launch" ;;
     ollama)  PORT=11434; SERVICE='OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:* OLLAMA_HOST=0.0.0.0:__PORT__ OLLAMA_VULKAN=1 exec ~/.local/bin/ollama serve' ;;
-    *) die "unknown service '$1' (jupyter|comfy|ollama, or --cmd)" ;;
+    vllm)
+      [[ -n ${2:-} ]] || die "vllm needs a model: hpc serve CLASS --time T vllm MODEL"
+      PORT=8000; SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/vllm/bin:\$PATH && exec vllm serve $(printf %q "$2") --host 0.0.0.0 --port __PORT__" ;;
+    tensorboard)
+      PORT=6006; SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/tensorboard/bin:\$PATH && exec tensorboard --logdir $(printf %q "${2:-.}") --host 0.0.0.0 --port __PORT__" ;;
+    *) die "unknown service '$1' (jupyter|comfy|ollama|vllm|tensorboard, or --cmd)" ;;
   esac
 }
 
@@ -310,19 +317,33 @@ setup_comfy() {
   ok "ComfyUI installed in ~/comfy/ComfyUI"
 }
 
+# An own conda environment ~/envs/NAME holding the pip package PKG, whose command is NAME.
+setup_pip_env() {
+  local name=$1 pkg=$2 env=$HOME/envs/$1
+  if [ -x "$env/bin/$name" ]; then ok "$name is installed ($env)"; return; fi
+  online https://pypi.org || { fail "$name" "this node cannot reach pypi.org"; return; }
+  unset VIRTUAL_ENV
+  export PYTHONNOUSERSITE=1
+  if conda create -y -q -p "$env" python=3.12 && "$env/bin/pip" install -q "$pkg" && [ -x "$env/bin/$name" ]
+  then ok "$name installed in $env"; else fail "$name" "cannot create the environment $env"; fi
+}
+setup_vllm() { setup_pip_env vllm vllm; }
+setup_tensorboard() { setup_pip_env tensorboard tensorboard; }
+
 for target in "$@"; do "setup_$target"; done
 exit $status
 EOF
 )
 
-# Check ollama and ComfyUI on a compute node and install what is missing (the software only, no models).
+# Check ollama, ComfyUI, vLLM and TensorBoard on a compute node and install what is missing (the software only,
+# no models). With no argument: ollama and ComfyUI; vLLM is a large install, so it is asked for by name.
 cmd_setup() {
   local time=01:00:00 targets=()
   while [[ $# -gt 0 ]]; do
     case $1 in
       --time)        time=${2:?--time needs a value}; shift 2 ;;
-      comfy|ollama)  targets+=("$1"); shift ;;
-      *)             die "usage: hpc setup [ollama] [comfy] [--time HH:MM:SS]" ;;
+      comfy|ollama|vllm|tensorboard)  targets+=("$1"); shift ;;
+      *)             die "usage: hpc setup [ollama] [comfy] [vllm] [tensorboard] [--time HH:MM:SS]" ;;
     esac
   done
   [[ ${#targets[@]} -gt 0 ]] || targets=(ollama comfy)
@@ -559,7 +580,7 @@ cmd_model() {
 # Start a server as a job, wait for its node, expose it on localhost:PORT; Ctrl-C (or a dropped
 # tunnel) cancels the job.
 cmd_serve() {
-  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
+  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
   local class=$1 args=() port='' cmd='' name
   shift
   while [[ $# -gt 0 ]]; do
@@ -577,9 +598,13 @@ cmd_serve() {
     [[ -n $port ]] || die "--cmd needs --port"
     name=custom SERVICE=$cmd
   else
-    [[ ${#REST[@]} -eq 1 ]] || die "name one service (jupyter|comfy|ollama) or use --cmd"
+    [[ ${#REST[@]} -ge 1 ]] || die "name one service (jupyter|comfy|ollama|vllm|tensorboard) or use --cmd"
     name=${REST[0]}
-    service "$name"
+    case $name in
+      vllm|tensorboard) [[ ${#REST[@]} -le 2 ]] || die "$name takes one argument" ;;
+      *)                [[ ${#REST[@]} -eq 1 ]] || die "$name takes no argument" ;;
+    esac
+    service "$name" "${REST[1]:-}"
     port=${port:-$PORT}
   fi
   [[ $port =~ ^[0-9]+$ ]] || die "--port needs a number"
@@ -672,12 +697,12 @@ usage: hpc COMMAND [ARGS]
   shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
-  serve CLASS --time T (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [options] [-- SBATCH_OPTION...]
+  serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [options] [-- SBATCH_OPTION...]
                   run a server as a job and open it on localhost:PORT; Ctrl-C cancels the job;
                   in --cmd, __PORT__ is replaced by the port and the server must listen on 0.0.0.0
-  setup [ollama] [comfy] [--time T]
-                  check ollama (~/.local) and ComfyUI (~/comfy, env ~/envs/comfy) on a cpu node and install
-                  what is missing, software only (default: both; --time default 01:00:00)
+  setup [ollama] [comfy] [vllm] [tensorboard] [--time T]
+                  check ollama (~/.local), ComfyUI (~/comfy), vLLM and TensorBoard (envs in ~/envs) on a cpu
+                  node and install what is missing, software only (default: ollama and comfy; --time default 01:00:00)
   model comfy [--to KIND] URL... [--to KIND URL...] [--filename NAME] [--time T] | model ollama NAME [--time T]
                   download models on the cluster, in a cpu job: ComfyUI files into ~/comfy/ComfyUI/models/KIND (a
                   --to applies to the URLs after it; a URL before any --to takes the first one) or an Ollama

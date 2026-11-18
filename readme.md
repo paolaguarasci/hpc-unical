@@ -151,7 +151,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc shell CLASS --time T [options]`                          | Interactive shell on a compute node with the preset of `CLASS`                              |
 | `hpc tunnel ID PORT`                                          | Forward a local port to a server run by job `ID`                                            |
 | `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost                    |
-| `hpc setup [ollama] [comfy]`                                  | Check ollama and ComfyUI on a cpu node and install what is missing                          |
+| `hpc setup [ollama] [comfy] [vllm] [tensorboard]`             | Check ollama, ComfyUI, vLLM and TensorBoard on a cpu node and install what is missing                        |
 | `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job                                                |
 | `hpc model list [comfy\|ollama]`                              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
 | `hpc model template NAME`, `hpc model comfy --workflow FILE`  | Download the models that a ComfyUI template or workflow file declares                       |
@@ -330,7 +330,7 @@ Forwards `localhost:PORT` to the same port of the compute node of a running job,
 ### `serve`
 
 ```bash
-hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
+hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
 ```
 
 Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then forwards `localhost:PORT` to its node, as `tunnel` does. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
@@ -340,27 +340,33 @@ Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of 
 | `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`)                  |
 | `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace     |
 | `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:*` |
+| `vllm`    | 8000         | `~/envs/vllm/bin/vllm serve MODEL --host 0.0.0.0` (OpenAI-compatible API; `MODEL` is required)   |
+| `tensorboard` | 6006     | `~/envs/tensorboard/bin/tensorboard --logdir LOGDIR --host 0.0.0.0` (`LOGDIR` defaults to the project directory) |
 
 With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
 
 ```bash
 hpc serve small --time 04:00:00 jupyter                       # http://localhost:8888
 hpc serve medium --time 02:00:00 ollama --port 11500
+hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B           # http://localhost:8000/v1
+hpc serve cpu --time 02:00:00 tensorboard runs                # http://localhost:6006
 hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000
 ```
 
 ### `setup`
 
 ```bash
-hpc setup [ollama] [comfy] [--time HH:MM:SS]
+hpc setup [ollama] [comfy] [vllm] [tensorboard] [--time HH:MM:SS]
 ```
 
-Checks ollama and ComfyUI and installs what is missing, so that `hpc serve ... ollama|comfy` works. Without arguments it handles both. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone.
+Checks ollama, ComfyUI, vLLM and TensorBoard and installs what is missing, so that `hpc serve ... ollama|comfy|vllm|tensorboard` works. Without arguments it handles ollama and ComfyUI only: vLLM brings its own PyTorch (several gigabytes), so it is asked for by name. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone.
 
 | Component | Installed in                                                                                                                |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `ollama`  | `~/.local/bin/ollama` and `~/.local/lib/ollama`, from the official `.tar.zst` archive (needs `zstd` on the node)            |
 | `comfy`   | conda environment `~/envs/comfy` (Python 3.12, `comfy-cli`) and ComfyUI in `~/comfy/ComfyUI` (`comfy-cli install --nvidia`) |
+| `vllm`    | conda environment `~/envs/vllm` (Python 3.12, `pip install vllm`)                                                           |
+| `tensorboard` | conda environment `~/envs/tensorboard` (Python 3.12, `pip install tensorboard`)                                         |
 
 The ComfyUI install runs with `CONDA_PREFIX` pointing at `~/envs/comfy`, that environment first on the `PATH` and the user site hidden (`PYTHONNOUSERSITE=1`), and `serve comfy` does the same: `comfy-cli` takes its Python from `CONDA_PREFIX`, which a login shell sets to the conda base, and the base cannot be written, so without this pip fails or falls back to `~/.local` and pollutes the base environment. If `~/comfy/ComfyUI` exists but the environment has no PyTorch (a past install that went wrong), `setup` fails instead of reinstalling over it: move `~/comfy` aside and run it again.
 
@@ -519,7 +525,7 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 
 ## 8. Interactive services: Jupyter, ComfyUI and Ollama
 
-[`hpc serve`](#serve) runs a server as a Slurm job on a compute node and opens it on `localhost`. The three services below have a preset; anything else goes through `--cmd`.
+[`hpc serve`](#serve) runs a server as a Slurm job on a compute node and opens it on `localhost`. The services below have a preset; anything else goes through `--cmd`.
 
 > [!NOTE]
 > The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
@@ -529,6 +535,8 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 | `jupyter` | `jupyter` in your login environment | `hpc serve small --time 04:00:00 jupyter` | `http://localhost:8888`  | token (in the job log) |
 | `comfy`   | `hpc setup comfy`                   | `hpc serve small --time 04:00:00 comfy`   | `http://localhost:8188`  | none                   |
 | `ollama`  | `hpc setup ollama`                  | `hpc serve tiny --time 04:00:00 ollama`   | `http://localhost:11434` | none                   |
+| `vllm`    | `hpc setup vllm`                    | `hpc serve medium --time 04:00:00 vllm MODEL` | `http://localhost:8000/v1` | none               |
+| `tensorboard` | `hpc setup tensorboard`         | `hpc serve cpu --time 04:00:00 tensorboard [LOGDIR]` | `http://localhost:6006` | none          |
 
 ### One-time setup
 
