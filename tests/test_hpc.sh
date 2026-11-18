@@ -436,6 +436,10 @@ expect_logged "serve tensorboard reads the log directory given" "--logdir\\ runs
 expect_logged "serve tensorboard listens on its port" "--port\\ 6006"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard
 expect_logged "serve tensorboard defaults to the project directory" "--logdir\\ ."
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"
+expect_logged "serve --args appends the options to the vllm command" "--port\\ 8000\\ --reasoning-parser\\ qwen3\\ --max-model-len\\ 8192"
+expect_error "serve --args is refused for a service that does not take it" serve small --time 01:00:00 jupyter --args "--x"
+expect_error "serve --args is refused with --cmd" serve cpu --time 01:00:00 --cmd x --port 1 --args "--x"
 expect_error "serve vllm needs a model" serve medium --time 01:00:00 vllm
 expect_error "serve rejects an argument for a service that takes none" serve small --time 01:00:00 jupyter extra
 expect_error "serve rejects two arguments for vllm" serve medium --time 01:00:00 vllm a b
@@ -445,6 +449,30 @@ expect_logged "serve --cmd names the job" "--job-name=serve-custom"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --free --push --time 01:00:00 jupyter
 expect_logged "serve accepts --free" "hpc-free small"
 expect_logged "serve accepts --push" "rsync -az -e"
+expect_logged "serve probes the port from the head node" "exec 3<>/dev/tcp/ainode02/8888"
+# A server that is slow to listen: the probe fails twice, then succeeds; the tunnel opens only after that.
+# Own ssh and sleep stubs, so that the waiting is neither real nor lost in the shared stub.
+mkdir -p "$WORK/slow"
+printf '#!/bin/sh\n' > "$WORK/slow/sleep"
+cat > "$WORK/slow/ssh" <<'STUB'
+#!/bin/sh
+echo "ssh $*" >> "$LOG"
+case "$*" in
+  *sbatch*) printf 77 ;;
+  *dev/tcp*) n=$(cat "$WORK/probes" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK/probes"; [ "$n" -ge "${PROBES_FAIL:-2}" ] ;;
+  *"squeue -h -j 77 -o %T"*) [ -n "${JOB_DIES:-}" ] || printf RUNNING; [ -z "${JOB_DIES:-}" ] || printf FAILED ;;
+  *squeue*) printf "RUNNING ainode02" ;;
+esac
+STUB
+chmod +x "$WORK/slow/"*
+export WORK
+rm -f "$WORK/probes"; PATH="$WORK/slow:$PATH" run serve small --time 01:00:00 jupyter
+[[ $(cat "$WORK/probes") -eq 3 ]] && ok "serve probes until the port opens" || fail "serve probes until the port opens ($(cat "$WORK/probes"))"
+grep -q "waiting for the server on port 8888" "$WORK/out" && grep -q "ready, open http://localhost:8888" "$WORK/out" && ok "serve says it waits, then that it is ready" || { fail "serve says it waits, then that it is ready"; cat "$WORK/out"; }
+expect_logged "serve opens the tunnel once the port is open" "-L 8888:ainode02:8888"
+rm -f "$WORK/probes"; JOB_DIES=1 PATH="$WORK/slow:$PATH" expect_error "serve fails when the job dies while waiting" serve small --time 01:00:00 jupyter
+grep -q "FAILED before the server was ready" "$WORK/out" && ok "serve reports the state of the dead job" || { fail "serve reports the state of the dead job"; cat "$WORK/out"; }
+expect_not_logged "serve does not tunnel to a dead job" "-L 8888"
 STUB_SBATCH=77 STUB_OUT="" expect_error "serve fails when the job is gone" serve small --time 01:00:00 jupyter
 STUB_SBATCH=77 STUB_OUT="" run serve small --time 01:00:00 jupyter
 expect_logged "serve cancels even when the job vanished" "scancel 77"

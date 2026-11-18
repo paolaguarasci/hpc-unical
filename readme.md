@@ -330,10 +330,10 @@ Forwards `localhost:PORT` to the same port of the compute node of a running job,
 ### `serve`
 
 ```bash
-hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
+hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
 ```
 
-Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then forwards `localhost:PORT` to its node, as `tunnel` does. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
+Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then until the server accepts connections on its port (a TCP probe from the head node, every 5 seconds: vLLM, for instance, opens its port only after minutes of loading), then forwards `localhost:PORT` to its node, as `tunnel` does. If the job leaves `RUNNING` while it waits, `serve` fails and points to `hpc logs ID`; there is no separate timeout, the limit is the job's `--time`. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
 
 | Service   | Default port | Command run on the node                                                                  |
 | --------- | ------------ | ---------------------------------------------------------------------------------------- |
@@ -343,12 +343,15 @@ Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of 
 | `vllm`    | 8000         | `~/envs/vllm/bin/vllm serve MODEL --host 0.0.0.0` (OpenAI-compatible API; `MODEL` is required)   |
 | `tensorboard` | 6006     | `~/envs/tensorboard/bin/tensorboard --logdir LOGDIR --host 0.0.0.0` (`LOGDIR` defaults to the project directory) |
 
+`--args OPTIONS` (only for `vllm` and `tensorboard`) appends `OPTIONS`, as typed, to the command of the service, for instance `--args "--reasoning-parser qwen3 --max-model-len 8192"`; the options are not validated, so a wrong one makes the server fail at start (see `hpc logs ID`). Everything after `--` is, as in `submit`, for Slurm, not for the server.
+
 With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
 
 ```bash
 hpc serve small --time 04:00:00 jupyter                       # http://localhost:8888
 hpc serve medium --time 02:00:00 ollama --port 11500
 hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B           # http://localhost:8000/v1
+hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3"
 hpc serve cpu --time 02:00:00 tensorboard runs                # http://localhost:6006
 hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000
 ```

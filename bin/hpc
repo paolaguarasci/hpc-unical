@@ -580,13 +580,14 @@ cmd_model() {
 # Start a server as a job, wait for its node, expose it on localhost:PORT; Ctrl-C (or a dropped
 # tunnel) cancels the job.
 cmd_serve() {
-  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
-  local class=$1 args=() port='' cmd='' name
+  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
+  local class=$1 args=() port='' cmd='' name extra=''
   shift
   while [[ $# -gt 0 ]]; do
     case $1 in
       --port) port=${2:?--port needs a value}; shift 2 ;;
       --cmd)  cmd=${2:?--cmd needs a value}; shift 2 ;;
+      --args) extra=${2:?--args needs a value}; shift 2 ;;
       --)     args+=("$@"); break ;;
       *)      args+=("$1"); shift ;;
     esac
@@ -596,6 +597,7 @@ cmd_serve() {
   if [[ -n $cmd ]]; then
     [[ ${#REST[@]} -eq 0 ]] || die "give either a service or --cmd, not both"
     [[ -n $port ]] || die "--cmd needs --port"
+    [[ -z $extra ]] || die "--args does not apply to --cmd: write the whole command"
     name=custom SERVICE=$cmd
   else
     [[ ${#REST[@]} -ge 1 ]] || die "name one service (jupyter|comfy|ollama|vllm|tensorboard) or use --cmd"
@@ -605,6 +607,10 @@ cmd_serve() {
       *)                [[ ${#REST[@]} -eq 1 ]] || die "$name takes no argument" ;;
     esac
     service "$name" "${REST[1]:-}"
+    if [[ -n $extra ]]; then
+      [[ $name == vllm || $name == tensorboard ]] || die "--args applies to vllm and tensorboard only"
+      SERVICE="$SERVICE $extra"
+    fi
     port=${port:-$PORT}
   fi
   [[ $port =~ ^[0-9]+$ ]] || die "--port needs a number"
@@ -628,8 +634,15 @@ cmd_serve() {
     last=$state
     sleep 5
   done
-  echo "hpc: job $id runs on $node; the server needs a moment to start (hpc logs $id)"
-  echo "hpc: open http://localhost:$port"
+  # A server such as vLLM opens its port only after minutes of loading, so wait for the port (a TCP connection
+  # from the head node, which is what the tunnel goes through) and give up if the job leaves RUNNING.
+  echo "hpc: job $id runs on $node; waiting for the server on port $port (hpc logs $id)"
+  until remote "timeout 3 bash -c 'exec 3<>/dev/tcp/$node/$port'" >/dev/null 2>&1; do
+    state=$(remote "squeue -h -j $id -o %T") || die "cannot query job $id"
+    [[ $state == RUNNING ]] || die "job $id ${state:-ended} before the server was ready (see: hpc logs $id)"
+    sleep 5
+  done
+  echo "hpc: ready, open http://localhost:$port"
   open_tunnel "$node" "$port"
 }
 
@@ -697,8 +710,9 @@ usage: hpc COMMAND [ARGS]
   shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
-  serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [options] [-- SBATCH_OPTION...]
-                  run a server as a job and open it on localhost:PORT; Ctrl-C cancels the job;
+  serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [options] [-- SBATCH_OPTION...]
+                  run a server as a job, wait until it listens and open it on localhost:PORT; Ctrl-C cancels the job;
+                  --args appends OPTIONS, as typed, to the vllm or tensorboard command;
                   in --cmd, __PORT__ is replaced by the port and the server must listen on 0.0.0.0
   setup [ollama] [comfy] [vllm] [tensorboard] [--time T]
                   check ollama (~/.local), ComfyUI (~/comfy), vLLM and TensorBoard (envs in ~/envs) on a cpu
