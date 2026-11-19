@@ -248,7 +248,13 @@ cmd_logs() {
 open_tunnel() { # open_tunnel NODE LOCAL_PORT [NODE_PORT]: the node port defaults to the local one
   local remote_port=${3:-$2}
   echo "hpc: localhost:$2 -> $1:$remote_port (Ctrl-C to close)"
-  ssh -N -o ExitOnForwardFailure=yes -L "$2:$1:$remote_port" "$TARGET"
+  # In the background and waited for: bash runs a trap only after a foreground child ends, so with ssh in the
+  # foreground a TERM sent to this process alone would leave the tunnel (and, in serve, the job) running; and
+  # a background command ignores SIGINT, hence the explicit kill. serve's EXIT trap then cancels the job.
+  ssh -N -o ExitOnForwardFailure=yes -L "$2:$1:$remote_port" "$TARGET" &
+  local tunnel=$!
+  trap 'kill "$tunnel" 2>/dev/null; exit 130' INT TERM
+  wait "$tunnel"
 }
 
 # Forward localhost:PORT to the same port of the node that runs the job, until Ctrl-C.

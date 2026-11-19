@@ -461,6 +461,7 @@ cat > "$WORK/slow/ssh" <<'STUB'
 echo "ssh $*" >> "$LOG"
 case "$*" in
   *sbatch*) printf 77 ;;
+  *-N*) [ -z "${TUNNEL_HOLD:-}" ] || { echo $$ > "$WORK/tunnel.pid"; exec /bin/sleep 30; } ;;
   *HPC_PORT*) m=$(cat "$WORK/portreads" 2>/dev/null || echo 0); echo $((m + 1)) > "$WORK/portreads"; [ "$m" -lt "${PORT_LATE:-0}" ] || printf 4242 ;;
   *dev/tcp*) n=$(cat "$WORK/probes" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK/probes"; [ "$n" -ge "${PROBES_FAIL:-2}" ] ;;
   *"squeue -h -j 77 -o %T"*) [ -n "${JOB_DIES:-}" ] || printf RUNNING; [ -z "${JOB_DIES:-}" ] || printf FAILED ;;
@@ -480,6 +481,30 @@ rm -f "$WORK/probes" "$WORK/portreads"; PORT_LATE=2 PROBES_FAIL=0 PATH="$WORK/sl
 rm -f "$WORK/probes"; JOB_DIES=1 PATH="$WORK/slow:$PATH" expect_error "serve fails when the job dies while waiting" serve small --time 01:00:00 jupyter
 grep -q "FAILED before the server was ready" "$WORK/out" && ok "serve reports the state of the dead job" || { fail "serve reports the state of the dead job"; cat "$WORK/out"; }
 expect_not_logged "serve does not tunnel to a dead job" "-L 8888"
+# A TERM sent to the hpc process alone (not Ctrl-C, which reaches the whole process group) must close the
+# tunnel and cancel the job at once, not when the tunnel ends by itself.
+: > "$LOG"; rm -f "$WORK/tunnel.pid" "$WORK/probes" "$WORK/portreads"
+(cd "$WORK/proj" && exec env TUNNEL_HOLD=1 PROBES_FAIL=0 PATH="$WORK/slow:$PATH" "$ROOT/bin/hpc" serve small --time 01:00:00 jupyter) > "$WORK/out2" 2>&1 &
+hp=$!
+for _ in $(seq 50); do [ -s "$WORK/tunnel.pid" ] && break; sleep 0.2; done
+kill -TERM "$hp" 2>/dev/null
+for _ in $(seq 25); do kill -0 "$hp" 2>/dev/null || break; sleep 0.2; done
+kill -0 "$hp" 2>/dev/null && { fail "TERM ends the serve process while the tunnel is open"; kill -9 "$hp"; } || ok "TERM ends the serve process while the tunnel is open"
+expect_logged "TERM cancels the job of serve" "scancel 77"
+kill -0 "$(cat "$WORK/tunnel.pid")" 2>/dev/null && { fail "TERM closes the tunnel of serve"; kill "$(cat "$WORK/tunnel.pid")"; } || ok "TERM closes the tunnel of serve"
+# Ctrl-C: SIGINT reaches the whole process group (job control gives the run its own group); ssh, started in
+# the background by a script, ignores it, so the trap of serve must close the tunnel itself.
+: > "$LOG"; rm -f "$WORK/tunnel.pid" "$WORK/probes" "$WORK/portreads"
+set -m
+(cd "$WORK/proj" && exec env TUNNEL_HOLD=1 PROBES_FAIL=0 PATH="$WORK/slow:$PATH" "$ROOT/bin/hpc" serve small --time 01:00:00 jupyter) > "$WORK/out3" 2>&1 &
+hp=$!
+set +m
+for _ in $(seq 50); do [ -s "$WORK/tunnel.pid" ] && break; sleep 0.2; done
+kill -INT -- "-$hp" 2>/dev/null
+for _ in $(seq 25); do kill -0 "$hp" 2>/dev/null || break; sleep 0.2; done
+kill -0 "$hp" 2>/dev/null && { fail "Ctrl-C ends the serve process while the tunnel is open"; kill -9 "$hp"; } || ok "Ctrl-C ends the serve process while the tunnel is open"
+expect_logged "Ctrl-C cancels the job of serve" "scancel 77"
+kill -0 "$(cat "$WORK/tunnel.pid")" 2>/dev/null && { fail "Ctrl-C closes the tunnel of serve"; kill "$(cat "$WORK/tunnel.pid")"; } || ok "Ctrl-C closes the tunnel of serve"
 STUB_SBATCH=77 STUB_OUT="" expect_error "serve fails when the job is gone" serve small --time 01:00:00 jupyter
 STUB_SBATCH=77 STUB_OUT="" run serve small --time 01:00:00 jupyter
 expect_logged "serve cancels even when the job vanished" "scancel 77"
