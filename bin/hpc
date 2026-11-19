@@ -734,7 +734,8 @@ cmd_bench() {
   cmd_wait "$id" || status=$?
   trap - EXIT INT TERM
   [[ $status -eq 0 ]] || die "job $id did not complete (see: hpc logs $id)"
-  remote "cd $(printf %q "$REMOTE_DIR") && sed -n '/^== hpc-bench/,\$p' slurm-$id.out"
+  # Only the headline of each run and vLLM's result table: the rest of the log is warnings and a dump of the options.
+  remote "cd $(printf %q "$REMOTE_DIR") && awk '/^== hpc-bench/{print} /Serving Benchmark Result/{p=1} p{print} /^=+\$/{p=0}' slurm-$id.out"
 }
 
 # Block until the job (or every task of a job array) ends; succeed only if all of it COMPLETED.

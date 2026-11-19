@@ -193,6 +193,7 @@ expect_logged "bench passes the model to the job script" 'hpc-bench\ Qwen/Qwen3-
 expect_logged "bench uses the port picked by the job" '\"\$HPC_RPORT\"'
 expect_logged "bench waits for the job" "sacct -X -n -P -j 77"
 expect_logged "bench prints the results from the log of the job" "slurm-77.out"
+expect_logged "bench prints only the result tables" "Serving Benchmark Result"
 STUB_SBATCH=77 run bench tiny --time 00:30:00 Qwen/Qwen3-0.6B --args "--max-model-len 8192" --bench-args "--num-prompts 20"
 expect_logged "bench --args goes to vllm serve" '--max-model-len\\ 8192'
 expect_logged "bench --bench-args goes to vllm bench serve" '--num-prompts\\ 20'
