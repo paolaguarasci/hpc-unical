@@ -487,7 +487,7 @@ hpc notify 4821 --mail                       # the address is HPC_MAIL
 Works on a job that is already pending or running (not on one that has ended: it says so and fails). It does two things:
 
 - It starts `hpc wait ID` detached in the background (it survives the closing of the terminal) and prints its process number: when the job ends, a macOS notification says whether it completed. It needs your Mac on and the VPN up until then, and it exists on macOS only; `kill PROCESS` stops the watch.
-- With `--mail`, it also sets Slurm's mail on the job (`scontrol update JobId=ID MailType=END,FAIL MailUser=ADDRESS`), so that the cluster mails you even if the Mac is off. The address is the argument or `HPC_MAIL`, which you can write in `.env` next to `HPC_USER` (it is loaded together with it). The mail leaves from the cluster's own mail system: whether your mailbox accepts it, or puts it in spam, depends on the provider.
+- With `--mail`, it also sets Slurm's mail on the job (`scontrol update JobId=ID MailType=END,FAIL MailUser=ADDRESS`), so that the cluster mails you even if the Mac is off. The address is the argument or `HPC_MAIL`, which you can write in `.env` next to `HPC_USER` (it is loaded together with it). The mail leaves from the cluster's own mail system: whether your mailbox accepts it, or puts it in spam, depends on the provider. In the tests on this cluster a university address received it and a Gmail address received nothing (not even in spam), so use the university address.
 
 ### `doctor`
 
