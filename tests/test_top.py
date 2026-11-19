@@ -153,6 +153,16 @@ class ParseSnapshotTest(unittest.TestCase):
         self.assertEqual((usage.cpu_time, usage.mem_mb, usage.gpu_mem_mb), ("00:03:20", 8658528 / 1024, 51880))
         self.assertEqual((usage.mem_now_mb, usage.gpu_mem_now_mb), (3868, 50000))
 
+    def test_step_without_accounting_data_is_skipped(self):
+        # sstat -a prints an empty row ("|") for a step that has just started: it must not crash the view.
+        empty_row = SNAPSHOT.replace("@@efficiency", "|\n@@efficiency", 1)
+        usage = parse_snapshot(empty_row).usage
+        self.assertEqual((usage.cpu_time, usage.mem_mb), ("00:03:20", 8658528 / 1024))
+
+    def test_no_usage_while_every_step_is_empty(self):
+        only_empty = "@@jobs\n@@nodes\n@@history\n@@log\n@@usage\n|\n@@efficiency\n"
+        self.assertIsNone(parse_snapshot(only_empty).usage)
+
     def test_efficiency_and_estimated_start(self):
         self.assertEqual(self.snapshot.efficiency["CPU Efficiency"], "4.80% of 01:04:12 core-walltime")
         self.assertEqual(self.snapshot.efficiency["Memory Utilized"], "762.18 MB")

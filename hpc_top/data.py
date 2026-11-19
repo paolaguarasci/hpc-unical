@@ -181,8 +181,10 @@ def parse_snapshot(text: str) -> Snapshot:
         fields[10:12] = tres(fields[10]), tres(fields[11])
         records[fields[-1]] = Record(*fields)
     history = [record for record in records.values() if record.state not in ACTIVE_STATES]
-    # One line per job step: the peak values and the current ones.
+    # One line per job step: the peak values and the current ones. sstat prints an empty row ("|") for a step
+    # that has just started and has no accounting yet: there is nothing to show for it, so it is left out.
     steps = [tuple(tres(part) for part in line.split("|")) for line in sections["usage"]]
+    steps = [step for step in steps if step[0]]
     log_path, *log_lines = sections["log"] or [""]
     return Snapshot(
         jobs=jobs,
