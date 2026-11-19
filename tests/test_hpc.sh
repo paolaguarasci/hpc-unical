@@ -225,6 +225,101 @@ out=$(cd "$WORK/proj" && HOME="$WORK/bh" PATH="$WORK/slow:$PATH" bash -c "$bscri
 [[ $code -ne 0 && $out == *"the server died"* ]] && ok "bench script fails explicitly when the server dies" || { fail "bench script fails explicitly when the server dies"; echo "$out"; }
 rm -f "$WORK"/proj/bench-server-*.log
 
+# --- notify: tell when a job ends, for a job already started too ---
+STUB_OUT="RUNNING" run notify 77
+expect_logged "notify checks that the job exists and has not ended" "sacct -X -n -P -j 77 --format=State"
+sleep 1
+expect_logged "notify watches the job in a detached hpc wait" "while echo"
+expect_logged "notify shows the macOS notification when the job ends" "display notification"
+grep -q "watching job 77 (RUNNING) in the background" "$WORK/out" && ok "notify says it watches the job in the background" || { fail "notify says it watches the job in the background"; cat "$WORK/out"; }
+expect_not_logged "notify without --mail sets no mail" "scontrol update"
+STUB_OUT="RUNNING" run notify 77 --mail someone@example.org
+expect_logged "notify --mail sets Slurm mail on the job" "scontrol update JobId=77 MailType=END,FAIL MailUser=someone@example.org"
+STUB_OUT="PENDING" HPC_MAIL=env@example.org run notify 78 --mail
+expect_logged "notify --mail without an address uses HPC_MAIL" "MailUser=env@example.org"
+sleep 1
+STUB_OUT="RUNNING" expect_error "notify needs a job ID" notify
+STUB_OUT="RUNNING" expect_error "notify rejects a bad job ID" notify abc
+STUB_OUT="RUNNING" expect_error "notify rejects an unknown option" notify 77 --sms
+STUB_OUT="RUNNING" HPC_MAIL= expect_error "notify --mail needs an address or HPC_MAIL" notify 77 --mail
+STUB_OUT="RUNNING" expect_error "notify rejects an invalid mail address" notify 77 --mail "a b@c"
+STUB_OUT="" expect_error "notify fails on a job that does not exist" notify 77
+STUB_OUT="COMPLETED" expect_error "notify fails on a job that has already ended" notify 77
+grep -q "already ended (COMPLETED)" "$WORK/out" && ok "notify says the state of a job that has ended" || { fail "notify says the state of a job that has ended"; cat "$WORK/out"; }
+expect_not_logged "notify does not set mail on a job that has ended" "scontrol update"
+
+# --- cache: space used in the home, and deletion (a dry run unless --yes) ---
+run cache
+expect_logged "cache runs in a cpu job, not on the head node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"
+expect_logged "cache reports by default" "hpc-cache report no"
+run cache clean
+expect_logged "cache clean is a dry run by default" "hpc-cache clean no"
+run cache clean --yes --time 00:20:00
+expect_logged "cache clean --yes passes yes to the job" "hpc-cache clean yes"
+expect_logged "cache --time overrides the default" "--time=00:20:00"
+run cache rm comfy loras/a.safetensors
+expect_logged "cache rm passes the kind and the name" "hpc-cache rm no comfy loras/a.safetensors"
+run cache rm hf org/model --yes
+expect_logged "cache rm hf --yes" "hpc-cache rm yes hf org/model"
+run cache rm ollama llama3.2:1b
+expect_logged "cache rm ollama" "hpc-cache rm no ollama llama3.2:1b"
+expect_error "cache rm needs a kind and a name" cache rm
+expect_error "cache rm refuses an unknown kind" cache rm env vllm
+expect_error "cache rm comfy refuses a path with .." cache rm comfy loras/../../x
+expect_error "cache rm comfy refuses an absolute path" cache rm comfy /etc/passwd
+expect_error "cache rm comfy refuses a whole folder" cache rm comfy loras
+expect_error "cache rm comfy refuses a space" cache rm comfy "loras/a b.safetensors"
+expect_error "cache rm hf needs ORG/NAME" cache rm hf model
+expect_error "cache rm hf refuses .." cache rm hf ../x
+expect_error "cache rm ollama refuses a bad name" cache rm ollama "a b"
+expect_error "cache report refuses --yes" cache --yes
+expect_error "cache clean takes no argument" cache clean x
+expect_error "cache refuses an unknown option" cache --force
+# The job script itself, on a fake home: sizes, dry run, deletion, refusals.
+cscript=$(sed -n "/^CACHE_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
+ch="$WORK/ch"
+mkdir -p "$ch/comfy/ComfyUI/models/loras" "$ch/envs/vllm" "$ch/.cache/pip" "$ch/.cache/uv" "$ch/.conda/pkgs" "$ch/.cache/huggingface/hub/models--org--m" "$ch/.local/bin"
+head -c 3000000 /dev/zero > "$ch/comfy/ComfyUI/models/loras/a.safetensors"
+head -c 1000000 /dev/zero > "$ch/envs/vllm/x"
+head -c 2000000 /dev/zero > "$ch/.cache/pip/p"
+head -c 500000 /dev/zero > "$ch/.conda/pkgs/c"
+head -c 1500000 /dev/zero > "$ch/.cache/huggingface/hub/models--org--m/w"
+cs() { (cd "$WORK/proj" && HOME="$ch" bash -c "$cscript" hpc-cache "$@" 2>&1); }
+out=$(cs report no); code=$?
+[[ $code -eq 0 && $out == *"home:"*"free"* && $out == *"ComfyUI models"* && $out == *"environment vllm"* && $out == *"pip cache"* && $out == *"Hugging Face models"* ]] && ok "cache report lists the locations and the free space" || { fail "cache report lists the locations and the free space"; echo "$out"; }
+[[ $out == *"loras/a.safetensors"* && $out == *"org/m"* && $out == *"rm -rf ~/envs/vllm"* ]] && ok "cache report names the largest models and how to free each place" || { fail "cache report names the largest models and how to free each place"; echo "$out"; }
+[[ $(echo "$out" | grep -n "ComfyUI models" | head -1 | cut -d: -f1) -lt $(echo "$out" | grep -n "pip cache" | head -1 | cut -d: -f1) ]] && ok "cache report sorts by size, largest first" || fail "cache report sorts by size, largest first"
+out=$(cs clean no)
+[[ $out == *"would remove"*"pip"* && $out == *"dry run"* && -f "$ch/.cache/pip/p" ]] && ok "cache clean is a dry run and removes nothing" || { fail "cache clean is a dry run and removes nothing"; echo "$out"; }
+out=$(cs clean yes)
+[[ $out == *"freed"* && ! -e "$ch/.cache/pip/p" && ! -e "$ch/.conda/pkgs/c" && -f "$ch/envs/vllm/x" && -f "$ch/comfy/ComfyUI/models/loras/a.safetensors" ]] && ok "cache clean --yes removes the caches and nothing else" || { fail "cache clean --yes removes the caches and nothing else"; echo "$out"; }
+out=$(cs rm no comfy loras/a.safetensors)
+[[ $out == *"would remove ComfyUI model loras/a.safetensors"* && $out == *"nothing removed"* && -f "$ch/comfy/ComfyUI/models/loras/a.safetensors" ]] && ok "cache rm comfy is a dry run" || { fail "cache rm comfy is a dry run"; echo "$out"; }
+out=$(cs rm no comfy loras/missing.safetensors); code=$?
+[[ $code -ne 0 && $out == *"FAIL"* ]] && ok "cache rm comfy fails on a missing file" || { fail "cache rm comfy fails on a missing file"; echo "$out"; }
+out=$(cs rm yes comfy loras/a.safetensors)
+[[ $out == *"removed ComfyUI model"* && ! -e "$ch/comfy/ComfyUI/models/loras/a.safetensors" && -d "$ch/comfy/ComfyUI/models/loras" ]] && ok "cache rm comfy --yes removes the file only" || { fail "cache rm comfy --yes removes the file only"; echo "$out"; }
+out=$(cs rm yes hf org/m)
+[[ $out == *"removed Hugging Face model org/m"* && ! -e "$ch/.cache/huggingface/hub/models--org--m" ]] && ok "cache rm hf --yes removes the model folder" || { fail "cache rm hf --yes removes the model folder"; echo "$out"; }
+out=$(cs rm no hf org/m); code=$?
+[[ $code -ne 0 ]] && ok "cache rm hf fails on a missing model" || { fail "cache rm hf fails on a missing model"; echo "$out"; }
+# ollama: a fake binary, with serve as a tiny HTTP server, list printing one model and rm leaving a trace.
+cat > "$ch/.local/bin/ollama" <<'STUB'
+#!/bin/sh
+case "$1" in
+  serve) exec python3 -m http.server "${OLLAMA_HOST##*:}" --bind 127.0.0.1 >/dev/null 2>&1 ;;
+  list) printf 'NAME ID SIZE MODIFIED\nllama3.2:1b abc 1.3 GB now\n' ;;
+  rm) echo "$2" > "$HOME/ollama-rm" ;;
+esac
+STUB
+chmod +x "$ch/.local/bin/ollama"
+out=$(cs rm no ollama llama3.2:1b)
+[[ $out == *"would remove ollama model llama3.2:1b (1.3 GB)"* && ! -e "$ch/ollama-rm" ]] && ok "cache rm ollama is a dry run" || { fail "cache rm ollama is a dry run"; echo "$out"; }
+out=$(cs rm yes ollama llama3.2:1b)
+[[ $out == *"removed ollama model llama3.2:1b"* && $(cat "$ch/ollama-rm") == "llama3.2:1b" ]] && ok "cache rm ollama --yes calls ollama rm" || { fail "cache rm ollama --yes calls ollama rm"; echo "$out"; }
+out=$(cs rm yes ollama other:1b); code=$?
+[[ $code -ne 0 && $out == *"not installed"* ]] && ok "cache rm ollama fails on a model that is not installed" || { fail "cache rm ollama fails on a model that is not installed"; echo "$out"; }
+
 # --- model: download a model on the cluster, in a cpu job ---
 run model comfy "https://huggingface.co/x/y/resolve/main/file.safetensors?download=true" --to loras
 expect_logged "model runs in a cpu job on the compute node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"

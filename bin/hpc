@@ -362,6 +362,129 @@ cmd_setup() {
   cpu_node_run "$time" "$SETUP_SCRIPT" hpc-setup "${targets[@]}"
 }
 
+# What `hpc cache` runs on a cpu node (bash -c; the arguments are the action, yes|no, and what the action
+# needs): measuring the home is slow on this disk (many small files), hence a job and not the head node.
+# Deleting is a dry run unless the second argument is yes.
+CACHE_SCRIPT=$(cat <<'EOF'
+set -u
+action=$1 yes=$2; shift 2
+home=$HOME
+fail() { echo "FAIL - $1"; exit 1; }
+size_kb() { du -sk "$1" 2>/dev/null | cut -f1; }
+human() { awk -v k="$1" 'BEGIN { split("K M G T", u, " "); i = 1; while (k >= 1024 && i < 4) { k /= 1024; i++ }; f = (i == 1) ? "%d%s" : "%.1f%s"; printf f, k, u[i] }'; }
+
+cache_report() {
+  echo "home: $(df -hP "$home" | awk 'NR == 2 {print $3 " used of " $2 ", " $4 " free (a disk shared with other users)"}')"
+  local tmp e kb
+  tmp=$(mktemp)
+  add() { kb=$(size_kb "$2"); [ -z "$kb" ] || printf '%s|%s|%s\n' "$kb" "$1" "$3" >> "$tmp"; return 0; }
+  add "ComfyUI models" "$home/comfy/ComfyUI/models" "hpc cache rm comfy KIND/FILE"
+  add "ComfyUI output" "$home/comfy/ComfyUI/output" "hpc download comfy, then delete by hand"
+  for e in "$home"/envs/*; do
+    [ -d "$e" ] && add "environment $(basename "$e")" "$e" "rm -rf ~/envs/$(basename "$e")  (hpc setup rebuilds it)"
+  done
+  add "ollama models" "$home/.ollama" "hpc cache rm ollama NAME"
+  add "Hugging Face models" "$home/.cache/huggingface" "hpc cache rm hf ORG/NAME"
+  add "pip cache" "$home/.cache/pip" "hpc cache clean"
+  add "uv cache" "$home/.cache/uv" "hpc cache clean"
+  add "conda packages" "$home/.conda/pkgs" "hpc cache clean"
+  sort -t'|' -k1,1nr "$tmp" | while IFS='|' read -r kb label hint; do
+    printf '%8s  %-22s %s\n' "$(human "$kb")" "$label" "$hint"
+  done
+  rm -f "$tmp"
+  if [ -d "$home/comfy/ComfyUI/models" ]; then
+    echo; echo "largest ComfyUI model files (hpc cache rm comfy KIND/FILE):"
+    find "$home/comfy/ComfyUI/models" -type f -exec du -k {} + 2>/dev/null | sort -rn | head -n 10 | while read -r kb path; do
+      printf '%8s  %s\n' "$(human "$kb")" "${path#"$home/comfy/ComfyUI/models/"}"
+    done
+  fi
+  if ls -d "$home"/.cache/huggingface/hub/models--* >/dev/null 2>&1; then
+    echo; echo "Hugging Face models (hpc cache rm hf ORG/NAME):"
+    for e in "$home"/.cache/huggingface/hub/models--*; do
+      printf '%8s  %s\n' "$(human "$(size_kb "$e")")" "$(basename "$e" | sed 's/^models--//; s/--/\//g')"
+    done
+  fi
+}
+
+cache_clean() {
+  local d kb total=0
+  for d in "$home/.cache/pip" "$home/.cache/uv" "$home/.conda/pkgs"; do
+    kb=$(size_kb "$d"); [ -n "$kb" ] || continue
+    total=$((total + kb))
+    if [ "$yes" = yes ]; then rm -rf "$d"/* "$d"/.[!.]* 2>/dev/null; echo "removed $(human "$kb") from $d"
+    else echo "would remove $(human "$kb") from $d"; fi
+  done
+  if [ "$yes" = yes ]; then echo "freed $(human "$total")"
+  else echo "dry run, nothing removed: $(human "$total") would be freed; run again with --yes"; fi
+}
+
+# A path (file or folder) to delete: dry run says what and how much; --yes deletes. A job that uses it will fail.
+remove_path() { # remove_path PATH LABEL
+  local kb; kb=$(size_kb "$1")
+  if [ "$yes" = yes ]; then rm -rf "$1" && echo "removed $2 ($(human "$kb"))"
+  else echo "would remove $2 ($(human "$kb")); a job using it would fail. Dry run, nothing removed: run again with --yes"; fi
+}
+
+cache_rm() {
+  local kind=$1 name=$2 path bin port pid i status=0 full line
+  # if/elif and not case: bash 3.2 (the macOS one, which runs the tests) cannot parse a case inside $(...).
+  if [ "$kind" = comfy ]; then
+    path="$home/comfy/ComfyUI/models/$name"; [ -f "$path" ] || fail "$name is not a file in the ComfyUI models folder"
+    remove_path "$path" "ComfyUI model $name"
+  elif [ "$kind" = hf ]; then
+    path="$home/.cache/huggingface/hub/models--${name//\//--}"; [ -d "$path" ] || fail "$name is not in the Hugging Face cache"
+    remove_path "$path" "Hugging Face model $name"
+  else
+    bin=$home/.local/bin/ollama full=$name port=$((20000 + RANDOM % 20000))
+    [[ $full == *:* ]] || full=$full:latest
+    [ -x "$bin" ] || fail "ollama is not installed: run hpc setup ollama"
+    # The client talks to a server: start a private one on this node, for the time of the command.
+    export OLLAMA_HOST=127.0.0.1:$port
+    "$bin" serve >/dev/null 2>&1 &
+    pid=$!
+    for i in $(seq 30); do curl -fs "http://$OLLAMA_HOST/" >/dev/null 2>&1 && break; sleep 1; done
+    curl -fs "http://$OLLAMA_HOST/" >/dev/null 2>&1 || { kill "$pid" 2>/dev/null; fail "the ollama server did not start"; }
+    line=$("$bin" list | awk -v n="$full" 'NR > 1 && $1 == n {print $3 " " $4}')
+    if [ -z "$line" ]; then echo "FAIL - $full is not installed"; status=1
+    elif [ "$yes" = yes ]; then "$bin" rm "$full" && echo "removed ollama model $full ($line)" || status=1
+    else echo "would remove ollama model $full ($line); a job using it would fail. Dry run, nothing removed: run again with --yes"; fi
+    kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
+    exit $status
+  fi
+}
+
+"cache_$action" "$@"
+EOF
+)
+
+# Space used in the home, and deletion of what can be recreated or what the user names. Deleting is a dry run
+# unless --yes is given. The environments in ~/envs are never deleted from here.
+cmd_cache() {
+  local action=report time=01:00:00 yes=no pos=()
+  case ${1:-} in clean|rm|report) action=$1; shift ;; esac
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time) time=${2:?--time needs a value}; shift 2 ;;
+      --yes)  yes=yes; shift ;;
+      -*)     die "unknown option $1" ;;
+      *)      pos+=("$1"); shift ;;
+    esac
+  done
+  [[ $yes == no || $action != report ]] || die "--yes applies to clean and rm only"
+  case $action in
+    report|clean) [[ ${#pos[@]} -eq 0 ]] || die "usage: hpc cache [report|clean] [--yes] [--time T]" ;;
+    rm)
+      [[ ${#pos[@]} -eq 2 ]] || die "usage: hpc cache rm comfy KIND/FILE | ollama NAME | hf ORG/NAME [--yes] [--time T]"
+      case ${pos[0]} in
+        comfy)  [[ ${pos[1]} =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*(/[A-Za-z0-9_][A-Za-z0-9_.-]*)+$ ]] || die "invalid ComfyUI model '${pos[1]}': a file inside a models folder (KIND/FILE), without spaces or '..'" ;;
+        ollama) [[ ${pos[1]} =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]*$ ]] || die "invalid Ollama model name '${pos[1]}'" ;;
+        hf)     [[ ${pos[1]} =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*/[A-Za-z0-9_][A-Za-z0-9._-]*$ ]] || die "invalid Hugging Face model '${pos[1]}': ORG/NAME" ;;
+        *)      die "rm takes comfy, ollama or hf" ;;
+      esac ;;
+  esac
+  cpu_node_run "$time" "$CACHE_SCRIPT" hpc-cache "$action" "$yes" ${pos[@]+"${pos[@]}"}
+}
+
 # Fetch results from the cluster. For comfy: the ComfyUI output folder, everything new (rsync skips what is
 # already there and never deletes), some files by PATH (relative to that folder), or the N most recent.
 cmd_download() {
@@ -738,6 +861,36 @@ cmd_bench() {
   remote "cd $(printf %q "$REMOTE_DIR") && awk '/^== hpc-bench/{print} /Serving Benchmark Result/{p=1} p{print} /^=+\$/{p=0}' slurm-$id.out"
 }
 
+# Tell when a job ends, for a job already started too: a detached `hpc wait` (macOS notification, Mac and VPN on),
+# and with --mail Slurm's own mail (MailType END and FAIL set on the job with scontrol).
+cmd_notify() {
+  local id='' mail='' want_mail=0 state
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --mail) want_mail=1; if [[ ${2:-} == *@* ]]; then mail=$2; shift; fi; shift ;;
+      -*)     die "unknown option $1" ;;
+      *)      [[ -z $id ]] || die "usage: hpc notify JOB_ID [--mail [ADDRESS]]"; id=$1; shift ;;
+    esac
+  done
+  [[ $id =~ $JOB_ID ]] || die "usage: hpc notify JOB_ID [--mail [ADDRESS]]"
+  if [[ $want_mail -eq 1 ]]; then
+    mail=${mail:-${HPC_MAIL:-}}
+    [[ -n $mail ]] || die "--mail needs an address: pass it or set HPC_MAIL"
+    [[ $mail =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || die "invalid mail address '$mail'"
+  fi
+  state=$(remote "sacct -X -n -P -j $id --format=State | head -n 1")
+  [[ -n $state ]] || die "job $id not found"
+  [[ $state =~ ^(PENDING|RUNNING|REQUEUED|SUSPENDED|COMPLETING|RESIZING)$ ]] || die "job $id has already ended ($state)"
+  if [[ $want_mail -eq 1 ]]; then
+    remote "scontrol update JobId=$id MailType=END,FAIL MailUser=$mail" || die "cannot set the mail on job $id"
+    echo "hpc: Slurm will mail $mail when job $id ends or fails"
+  fi
+  # HUP ignored, so that closing the terminal does not stop the watch.
+  (trap '' HUP; cmd_wait "$id") </dev/null >/dev/null 2>&1 &
+  echo "hpc: watching job $id ($state) in the background (process $!, stop it with kill $!); a notification tells when it ends"
+  disown
+}
+
 # Block until the job (or every task of a job array) ends; succeed only if all of it COMPLETED.
 # One SSH session: the loop runs on the head node.
 cmd_wait() {
@@ -802,6 +955,12 @@ usage: hpc COMMAND [ARGS]
   shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
+  notify ID [--mail [ADDRESS]]
+                  watch job ID in the background and show a macOS notification when it ends (a job already
+                  started too); --mail also sets Slurm's mail on it (ADDRESS or HPC_MAIL)
+  cache [report|clean|rm comfy KIND/FILE|ollama NAME|hf ORG/NAME] [--yes] [--time T]
+                  space used in the home, by location (in a cpu job); clean removes the pip, uv and conda caches;
+                  rm removes one model; deleting is a dry run unless --yes; environments are never deleted
   bench CLASS --time T MODEL [--args OPTIONS] [--bench-args OPTIONS] [options] [-- SBATCH_OPTION...]
                   benchmark vLLM on a GPU class in one job (output tokens per second, time to first token,
                   time per token, at concurrency 1 and 16); --args goes to vllm serve, --bench-args to vllm bench serve
@@ -854,11 +1013,13 @@ case ${1:-help} in
   shell)  shift; cmd_shell "$@" ;;
   tunnel) shift; cmd_tunnel "$@" ;;
   serve)  shift; cmd_serve "$@" ;;
+  cache)  shift; cmd_cache "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
   setup)  shift; cmd_setup "$@" ;;
   model)  shift; cmd_model "$@" ;;
   download) shift; cmd_download "$@" ;;
   wait|w) shift; cmd_wait "$@" ;;
+  notify) shift; cmd_notify "$@" ;;
   doctor) cmd_doctor ;;
   info)   shift; cmd_info "$@" ;;
   free)   cmd_free ;;

@@ -62,10 +62,12 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`tunnel`](#tunnel)
     - [`serve`](#serve)
     - [`bench`](#bench)
+    - [`cache`](#cache)
     - [`setup`](#setup)
     - [`model`](#model)
     - [`download`](#download)
     - [`wait`](#wait)
+    - [`notify`](#notify)
     - [`doctor`](#doctor)
     - [`info`](#info)
     - [`free`](#free)
@@ -153,11 +155,13 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc tunnel ID PORT`                                          | Forward a local port to a server run by job `ID`                                            |
 | `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost                    |
 | `hpc bench CLASS --time T MODEL`                              | Benchmark vLLM on a GPU class: tokens per second, time to first token, time per token       |
+| `hpc cache [clean\|rm KIND NAME] [--yes]`                     | Space used in the home by location; remove the caches or one model (dry run unless `--yes`)  |
 | `hpc setup [ollama] [comfy] [vllm] [tensorboard]`             | Check ollama, ComfyUI, vLLM and TensorBoard on a cpu node and install what is missing                        |
 | `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job                                                |
 | `hpc model list [comfy\|ollama]`                              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
 | `hpc model template NAME`, `hpc model comfy --workflow FILE`  | Download the models that a ComfyUI template or workflow file declares                       |
 | `hpc wait ID`                                                 | Block until job `ID` ends; succeed only if it completed                                     |
+| `hpc notify ID [--mail [ADDRESS]]`                            | Notify when job `ID` ends (a job already started too): macOS notification, and Slurm mail   |
 | `hpc doctor`                                                  | Check tools, VPN and SSH access, Slurm and the project directory                            |
 | `hpc info ID`                                                 | CPU and memory efficiency of a finished job                                                 |
 | `hpc free`                                                    | Classes with a free GPU slice right now (requires `uv`)                                     |
@@ -373,6 +377,30 @@ hpc bench tiny --time 00:30:00 Qwen/Qwen3-0.6B
 hpc bench medium --time 01:00:00 Qwen/Qwen3-8B --bench-args "--num-prompts 200"
 ```
 
+### `cache`
+
+```bash
+hpc cache [report] [--time HH:MM:SS]
+hpc cache clean [--yes] [--time HH:MM:SS]
+hpc cache rm comfy KIND/FILE | ollama NAME | hf ORG/NAME [--yes] [--time HH:MM:SS]
+```
+
+The home of the cluster is a disk shared with other users, without a guaranteed quota or backup, and models and environments take tens of gigabytes. Every form runs in a `cpu` job (`srun`, default `--time 01:00:00`), because measuring the home is slow on that disk (many small files) and must not run on the head node.
+
+- `hpc cache` (or `hpc cache report`) prints the free space of the disk and one line per location, largest first, with how to free it: the ComfyUI models and output, each environment in `~/envs`, the Ollama models, the Hugging Face cache and the pip, uv and conda caches; then the ten largest ComfyUI model files and the Hugging Face models by name. It only reads.
+- `hpc cache clean` removes the contents of the pip, uv and conda package caches, which are recreated when needed (the next `hpc setup` is slower). Models and environments are not touched.
+- `hpc cache rm` removes one model: a file of `~/comfy/ComfyUI/models` (`KIND/FILE`, a file and never a whole folder; no spaces, no `..`), an Ollama model (`ollama rm`, on a private server started for the command) or a model of the Hugging Face cache (`ORG/NAME`, in the default `~/.cache/huggingface`).
+
+**Deleting is a dry run unless `--yes` is given**: without it, `clean` and `rm` say what they would remove and how much space it is, and remove nothing. The command cannot know whether a running job uses a model: such a job would fail. The environments in `~/envs` are never deleted by `hpc`: the report prints the `rm -rf` to run by hand, and `hpc setup` rebuilds them.
+
+```bash
+hpc cache                                  # where the space went
+hpc cache clean                            # what would be removed
+hpc cache clean --yes
+hpc cache rm comfy loras/old.safetensors   # dry run
+hpc cache rm ollama llama3.2:1b --yes
+```
+
 ### `setup`
 
 ```bash
@@ -447,6 +475,19 @@ hpc wait 4821 && hpc pull results.csv     # fetch the results only if the job co
 ```
 
 Blocks until the job ends, then prints its final state, elapsed time and exit code. The exit status is 0 only when the state is `COMPLETED` (for a job array, when every task completed), so the command can gate what follows. A single SSH session is kept open and the accounting is polled every 10 seconds on the head node; if the connection drops, the command fails and can simply be run again.
+
+### `notify`
+
+```bash
+hpc notify 4821                              # a macOS notification when the job ends
+hpc notify 4821 --mail me@example.org        # and Slurm sends a mail on END and FAIL
+hpc notify 4821 --mail                       # the address is HPC_MAIL
+```
+
+Works on a job that is already pending or running (not on one that has ended: it says so and fails). It does two things:
+
+- It starts `hpc wait ID` detached in the background (it survives the closing of the terminal) and prints its process number: when the job ends, a macOS notification says whether it completed. It needs your Mac on and the VPN up until then, and it exists on macOS only; `kill PROCESS` stops the watch.
+- With `--mail`, it also sets Slurm's mail on the job (`scontrol update JobId=ID MailType=END,FAIL MailUser=ADDRESS`), so that the cluster mails you even if the Mac is off. The address is the argument or `HPC_MAIL`, which you can write in `.env` next to `HPC_USER` (it is loaded together with it). The mail leaves from the cluster's own mail system: whether your mailbox accepts it, or puts it in spam, depends on the provider.
 
 ### `doctor`
 
