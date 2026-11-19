@@ -878,7 +878,8 @@ cmd_notify() {
     [[ -n $mail ]] || die "--mail needs an address: pass it or set HPC_MAIL"
     [[ $mail =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+$ ]] || die "invalid mail address '$mail'"
   fi
-  state=$(remote "sacct -X -n -P -j $id --format=State | head -n 1")
+  # squeue knows a job the moment it is submitted; sacct, the accounting, can lag behind and does not know it yet.
+  state=$(remote "s=\$(squeue -h -j $id -o %T | head -n 1); [ -n \"\$s\" ] || s=\$(sacct -X -n -P -j $id --format=State | head -n 1); echo \"\$s\"")
   [[ -n $state ]] || die "job $id not found"
   [[ $state =~ ^(PENDING|RUNNING|REQUEUED|SUSPENDED|COMPLETING|RESIZING)$ ]] || die "job $id has already ended ($state)"
   if [[ $want_mail -eq 1 ]]; then

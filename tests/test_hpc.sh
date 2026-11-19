@@ -227,7 +227,8 @@ rm -f "$WORK"/proj/bench-server-*.log
 
 # --- notify: tell when a job ends, for a job already started too ---
 STUB_OUT="RUNNING" run notify 77
-expect_logged "notify checks that the job exists and has not ended" "sacct -X -n -P -j 77 --format=State"
+expect_logged "notify asks the queue first, the accounting only as a fallback" "squeue -h -j 77 -o %T"
+expect_logged "notify falls back to the accounting for a job that is not in the queue any more" "sacct -X -n -P -j 77 --format=State"
 sleep 1
 expect_logged "notify watches the job in a detached hpc wait" "while echo"
 expect_logged "notify shows the macOS notification when the job ends" "display notification"
