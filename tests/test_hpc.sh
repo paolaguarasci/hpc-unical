@@ -461,6 +461,7 @@ cat > "$WORK/slow/ssh" <<'STUB'
 echo "ssh $*" >> "$LOG"
 case "$*" in
   *sbatch*) printf 77 ;;
+  *%i*) printf "%s" "${LEFTOVER:-}" ;;
   *-N*) [ -z "${TUNNEL_HOLD:-}" ] || { echo $$ > "$WORK/tunnel.pid"; exec /bin/sleep 30; } ;;
   *HPC_PORT*) m=$(cat "$WORK/portreads" 2>/dev/null || echo 0); echo $((m + 1)) > "$WORK/portreads"; [ "$m" -lt "${PORT_LATE:-0}" ] || printf 4242 ;;
   *dev/tcp*) n=$(cat "$WORK/probes" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK/probes"; [ "$n" -ge "${PROBES_FAIL:-2}" ] ;;
@@ -481,6 +482,16 @@ rm -f "$WORK/probes" "$WORK/portreads"; PORT_LATE=2 PROBES_FAIL=0 PATH="$WORK/sl
 rm -f "$WORK/probes"; JOB_DIES=1 PATH="$WORK/slow:$PATH" expect_error "serve fails when the job dies while waiting" serve small --time 01:00:00 jupyter
 grep -q "FAILED before the server was ready" "$WORK/out" && ok "serve reports the state of the dead job" || { fail "serve reports the state of the dead job"; cat "$WORK/out"; }
 expect_not_logged "serve does not tunnel to a dead job" "-L 8888"
+# Leftover serve jobs of the user: a warning, never a refusal; other jobs are not mentioned.
+rm -f "$WORK/probes" "$WORK/portreads"
+LEFTOVER=$'10872 serve-vllm\n10880 serve-tensorboard\n99 train' PROBES_FAIL=0 PATH="$WORK/slow:$PATH" run serve small --time 01:00:00 jupyter
+grep -q "job 10872 (serve-vllm) of yours is still active.*hpc cancel 10872" "$WORK/out" && grep -q "job 10880 (serve-tensorboard)" "$WORK/out" && ok "serve warns about each leftover serve job" || { fail "serve warns about each leftover serve job"; cat "$WORK/out"; }
+grep -q "job 99" "$WORK/out" && fail "serve mentions a job that is not a serve job" || ok "serve does not mention other jobs"
+expect_logged "serve still submits its job after the warning" "sbatch --parsable"
+expect_logged "serve lists the jobs of the user on the cluster" 'squeue -h -u "$USER"'
+rm -f "$WORK/probes" "$WORK/portreads"
+LEFTOVER='' PROBES_FAIL=0 PATH="$WORK/slow:$PATH" run serve small --time 01:00:00 jupyter
+grep -q "warning" "$WORK/out" && fail "serve warns with no leftover" || ok "serve is silent with no leftover"
 # A TERM sent to the hpc process alone (not Ctrl-C, which reaches the whole process group) must close the
 # tunnel and cancel the job at once, not when the tunnel ends by itself.
 : > "$LOG"; rm -f "$WORK/tunnel.pid" "$WORK/probes" "$WORK/portreads"

@@ -628,6 +628,16 @@ cmd_serve() {
   [[ $port =~ ^[0-9]+$ ]] || die "--port needs a number"
   if [[ $PUSH -eq 1 ]]; then cmd_push; fi
 
+  # A serve killed with SIGKILL, or a crashed machine, leaves its job running until --time ends: say so.
+  # Only a warning, since several services can legitimately run together (job name serve-<service>).
+  local jid jname active
+  active=$(remote 'squeue -h -u "$USER" -o "%i %j"') || die "cannot list your jobs"
+  while read -r jid jname; do
+    if [[ ${jname:-} == serve-* ]]; then
+      echo "hpc: warning: job $jid ($jname) of yours is still active; if it is a leftover: hpc cancel $jid" >&2
+    fi
+  done <<<"$active"
+
   local out id
   out=$(remote_login "cd $(printf %q "$REMOTE_DIR") && sbatch --parsable $(quote_args "${ARGS[@]}" --job-name="serve-$name" ${EXTRA[@]+"${EXTRA[@]}"} --wrap="$PICK_PORT${SERVICE//__PORT__/\$HPC_RPORT}")")
   id=${out%%;*}
