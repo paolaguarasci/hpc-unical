@@ -61,6 +61,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`shell`](#shell)
     - [`tunnel`](#tunnel)
     - [`serve`](#serve)
+    - [`bench`](#bench)
     - [`setup`](#setup)
     - [`model`](#model)
     - [`download`](#download)
@@ -151,6 +152,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc shell CLASS --time T [options]`                          | Interactive shell on a compute node with the preset of `CLASS`                              |
 | `hpc tunnel ID PORT`                                          | Forward a local port to a server run by job `ID`                                            |
 | `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost                    |
+| `hpc bench CLASS --time T MODEL`                              | Benchmark vLLM on a GPU class: tokens per second, time to first token, time per token       |
 | `hpc setup [ollama] [comfy] [vllm] [tensorboard]`             | Check ollama, ComfyUI, vLLM and TensorBoard on a cpu node and install what is missing                        |
 | `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job                                                |
 | `hpc model list [comfy\|ollama]`                              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
@@ -354,6 +356,21 @@ hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B           # http://localhost
 hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3"
 hpc serve cpu --time 02:00:00 tensorboard runs                # http://localhost:6006
 hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000
+```
+
+### `bench`
+
+```bash
+hpc bench CLASS --time HH:MM:SS MODEL [--args OPTIONS] [--bench-args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
+```
+
+Measures how fast a model runs on a GPU class, to choose the class for an experiment. One job (`bench-vllm`) starts vLLM on the loopback of the node, waits until it listens, runs the benchmark that vLLM ships (`vllm bench serve`) and stops the server; `hpc` waits for the job and prints the results from its log. No tunnel and no fixed port are involved (the job picks a free port, as in [`serve`](#serve)), so the figures are those of the server, not of your connection. Needs `hpc setup vllm`; vLLM only. Ctrl-C cancels the job.
+
+The workload is fixed by default: 100 requests with random prompts of 512 tokens and answers of 128 tokens (`--ignore-eos`, so that every answer reaches that length), run twice, with one request at a time and with 16 in parallel. Each run reports the output tokens per second, the time to first token and the time per token. `--args OPTIONS` is appended to `vllm serve` (for instance `--max-model-len 8192`); `--bench-args OPTIONS` is appended to `vllm bench serve` after the defaults, so it wins (for instance `--num-prompts 20`). Neither is validated. The server log stays in `bench-server-ID.log` in the project directory on the cluster, and is shown when the server dies.
+
+```bash
+hpc bench tiny --time 00:30:00 Qwen/Qwen3-0.6B
+hpc bench medium --time 01:00:00 Qwen/Qwen3-8B --bench-args "--num-prompts 200"
 ```
 
 ### `setup`

@@ -25,6 +25,7 @@ _hpc() {
     'shell:interactive shell on a compute node'
     'tunnel:forward a local port to a job'
     'serve:run a server as a job and open it on localhost'
+    'bench:benchmark vLLM on a GPU class'
     'setup:check and install ollama, ComfyUI, vLLM and TensorBoard'
     'model:download a model on the cluster'
     'download:copy ComfyUI results to this machine'
@@ -39,7 +40,7 @@ _hpc() {
     return
   fi
   case $words[2] in
-    run|sweep|submit|shell|serve) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
+    run|sweep|submit|shell|serve|bench) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
     setup) _values 'component' ollama comfy vllm tensorboard ;;
     model) (( CURRENT == 3 )) && _values 'kind' comfy ollama list template || { [[ $words[3] == list ]] && _values 'target' comfy ollama; } ;;
     logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;

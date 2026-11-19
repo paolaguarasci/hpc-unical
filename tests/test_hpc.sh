@@ -184,6 +184,46 @@ chmod +x "$WORK/h2/envs/comfy/bin/"*
 out=$(HOME="$WORK/h2" PATH="$WORK/yes:$PATH" bash -c "$script" x comfy 2>&1); code=$?
 [[ $code -ne 0 && $out == *"has no PyTorch"* ]] && ok "setup refuses a ComfyUI whose environment has no PyTorch" || { fail "setup refuses a ComfyUI whose environment has no PyTorch"; echo "$out"; }
 
+# --- bench: one job that starts vLLM and runs vllm bench serve against it ---
+STUB_SBATCH=77 run bench tiny --time 00:30:00 Qwen/Qwen3-0.6B
+expect_logged "bench submits a job named after the benchmark" "--job-name=bench-vllm"
+expect_logged "bench uses the class preset" "--gres=gpu:1g.35gb:1"
+expect_logged "bench starts vllm on the model, on the loopback" 'vllm\ serve\ \"\$model\"\ --host\ 127.0.0.1'
+expect_logged "bench passes the model to the job script" 'hpc-bench\ Qwen/Qwen3-0.6B'
+expect_logged "bench uses the port picked by the job" '\"\$HPC_RPORT\"'
+expect_logged "bench waits for the job" "sacct -X -n -P -j 77"
+expect_logged "bench prints the results from the log of the job" "slurm-77.out"
+STUB_SBATCH=77 run bench tiny --time 00:30:00 Qwen/Qwen3-0.6B --args "--max-model-len 8192" --bench-args "--num-prompts 20"
+expect_logged "bench --args goes to vllm serve" '--max-model-len\\ 8192'
+expect_logged "bench --bench-args goes to vllm bench serve" '--num-prompts\\ 20'
+expect_error "bench needs a model" bench tiny --time 00:30:00
+expect_error "bench takes one model" bench tiny --time 00:30:00 a b
+expect_error "bench needs a GPU class" bench cpu --time 00:30:00 Qwen/Qwen3-0.6B
+expect_error "bench rejects --requeue" bench tiny --time 00:30:00 Qwen/Qwen3-0.6B --requeue
+expect_error "bench requires --time" bench tiny Qwen/Qwen3-0.6B
+STUB_SBATCH=oops expect_error "bench fails when no job ID is returned" bench tiny --time 00:30:00 Qwen/Qwen3-0.6B
+# The job script itself, with a fake vllm: serve is a tiny HTTP server, bench prints its arguments.
+mkdir -p "$WORK/bh/envs/vllm/bin"
+cat > "$WORK/bh/envs/vllm/bin/vllm" <<'STUB'
+#!/bin/sh
+case "$1" in
+  serve) while [ $# -gt 0 ]; do [ "$1" = --port ] && port=$2; shift; done; exec python3 -m http.server "$port" --bind 127.0.0.1 >/dev/null 2>&1 ;;
+  bench) echo "stub bench: $*" ;;
+esac
+STUB
+chmod +x "$WORK/bh/envs/vllm/bin/vllm"
+bscript=$(sed -n "/^BENCH_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
+port=$(python3 -c 'import socket;s=socket.socket();s.bind(("",0));print(s.getsockname()[1])')
+out=$(cd "$WORK/proj" && HOME="$WORK/bh" PATH="$WORK/slow:$PATH" bash -c "$bscript" hpc-bench m/x "--serve-opt 1" "--num-prompts 20" "$port" 2>&1); code=$?
+[[ $code -eq 0 && $out == *"concurrency 1"* && $out == *"concurrency 16"* ]] && ok "bench script runs the benchmark at both concurrency levels" || { fail "bench script runs the benchmark at both concurrency levels"; echo "$out"; }
+[[ $out == *"--dataset-name random --random-input-len 512 --random-output-len 128 --ignore-eos --num-prompts 100"* && $out == *"--max-concurrency 16"* ]] && ok "bench script uses the default workload" || { fail "bench script uses the default workload"; echo "$out"; }
+[[ $out == *"--num-prompts 100 --max-concurrency 1 --disable-tqdm --num-prompts 20"* ]] && ok "bench script puts --bench-args after the defaults, so they win" || { fail "bench script puts --bench-args after the defaults, so they win"; echo "$out"; }
+(exec 3<>/dev/tcp/127.0.0.1/"$port") 2>/dev/null && fail "bench script stops the server at the end" || ok "bench script stops the server at the end"
+printf '#!/bin/sh\nexit 1\n' > "$WORK/bh/envs/vllm/bin/vllm"
+out=$(cd "$WORK/proj" && HOME="$WORK/bh" PATH="$WORK/slow:$PATH" bash -c "$bscript" hpc-bench m/x "" "" "$port" 2>&1); code=$?
+[[ $code -ne 0 && $out == *"the server died"* ]] && ok "bench script fails explicitly when the server dies" || { fail "bench script fails explicitly when the server dies"; echo "$out"; }
+rm -f "$WORK"/proj/bench-server-*.log
+
 # --- model: download a model on the cluster, in a cpu job ---
 run model comfy "https://huggingface.co/x/y/resolve/main/file.safetensors?download=true" --to loras
 expect_logged "model runs in a cpu job on the compute node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"

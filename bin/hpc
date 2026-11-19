@@ -673,6 +673,70 @@ cmd_serve() {
   open_tunnel "$node" "$port" "$node_port"
 }
 
+# What `hpc bench` runs on the compute node (bash -c, with MODEL, the options of vllm serve, those of vllm bench
+# serve and the port picked by the job as arguments): start vLLM on the loopback, wait for its port, run the
+# benchmark that vLLM ships at two concurrency levels (one stream, then 16), stop the server. The server log
+# goes to its own file so that the job log holds only the results; --ignore-eos makes every answer reach the
+# requested length, otherwise random prompts end early and distort the tokens per second.
+BENCH_SCRIPT=$(cat <<'EOF'
+set -u
+model=$1 serve_args=$2 bench_args=$3 port=$4
+unset VIRTUAL_ENV
+export PYTHONNOUSERSITE=1 PATH="$HOME/envs/vllm/bin:$PATH"
+log=bench-server-${SLURM_JOB_ID:-local}.log
+vllm serve "$model" --host 127.0.0.1 --port "$port" $serve_args > "$log" 2>&1 &
+server=$!
+until (exec 3<>/dev/tcp/127.0.0.1/"$port") 2>/dev/null; do
+  kill -0 "$server" 2>/dev/null || { echo "hpc-bench: the server died, last lines of $log:"; tail -n 20 "$log"; exit 1; }
+  sleep 5
+done
+status=0
+for c in 1 16; do
+  echo "== hpc-bench: $model, concurrency $c"
+  vllm bench serve --backend openai --base-url "http://127.0.0.1:$port" --endpoint /v1/completions --model "$model" \
+    --dataset-name random --random-input-len 512 --random-output-len 128 --ignore-eos --num-prompts 100 \
+    --max-concurrency "$c" --disable-tqdm $bench_args || status=1
+done
+kill "$server" 2>/dev/null
+wait "$server" 2>/dev/null
+exit $status
+EOF
+)
+
+# Benchmark a model on a GPU class: one job runs BENCH_SCRIPT, then the results are printed here.
+cmd_bench() {
+  [[ $# -ge 1 ]] || die "usage: hpc bench CLASS --time HH:MM:SS MODEL [--args OPTIONS] [--bench-args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
+  local class=$1 args=() serve_args='' bench_args=''
+  shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --args)       serve_args=${2:?--args needs a value}; shift 2 ;;
+      --bench-args) bench_args=${2:?--bench-args needs a value}; shift 2 ;;
+      --)           args+=("$@"); break ;;
+      *)            args+=("$1"); shift ;;
+    esac
+  done
+  resources "$class" ${args[@]+"${args[@]}"}
+  [[ -n $PROFILE ]] || die "bench needs a GPU class (tiny, small, medium or large)"
+  [[ $REQUEUE -eq 0 ]] || die "--requeue does not apply to a benchmark"
+  [[ ${#REST[@]} -eq 1 ]] || die "name one model: hpc bench CLASS --time T MODEL"
+  if [[ $PUSH -eq 1 ]]; then cmd_push; fi
+
+  local out id
+  out=$(remote_login "cd $(printf %q "$REMOTE_DIR") && sbatch --parsable $(quote_args "${ARGS[@]}" --job-name=bench-vllm ${EXTRA[@]+"${EXTRA[@]}"} --wrap="$PICK_PORT bash -c $(printf %q "$BENCH_SCRIPT") hpc-bench $(printf %q "${REST[0]}") $(printf %q "$serve_args") $(printf %q "$bench_args") \"\$HPC_RPORT\"")")
+  id=${out%%;*}
+  [[ $id =~ $JOB_ID ]] || die "cannot read the job ID from the sbatch output"
+  echo "hpc: job $id benchmarks ${REST[0]} on class $class (hpc logs $id)"
+  # Ctrl-C cancels the job; once it has ended there is nothing left to cancel.
+  trap "trap - EXIT; remote 'scancel $id' >/dev/null 2>&1 || true; echo 'hpc: job $id cancelled'" EXIT
+  trap 'exit 130' INT TERM
+  local status=0
+  cmd_wait "$id" || status=$?
+  trap - EXIT INT TERM
+  [[ $status -eq 0 ]] || die "job $id did not complete (see: hpc logs $id)"
+  remote "cd $(printf %q "$REMOTE_DIR") && sed -n '/^== hpc-bench/,\$p' slurm-$id.out"
+}
+
 # Block until the job (or every task of a job array) ends; succeed only if all of it COMPLETED.
 # One SSH session: the loop runs on the head node.
 cmd_wait() {
@@ -737,6 +801,9 @@ usage: hpc COMMAND [ARGS]
   shell CLASS --time T [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SRUN_OPTION...]
                   interactive shell on a compute node, started in ~/projects/<current dir name>
   tunnel ID PORT  forward localhost:PORT to the same port of the node running job ID (Ctrl-C to close)
+  bench CLASS --time T MODEL [--args OPTIONS] [--bench-args OPTIONS] [options] [-- SBATCH_OPTION...]
+                  benchmark vLLM on a GPU class in one job (output tokens per second, time to first token,
+                  time per token, at concurrency 1 and 16); --args goes to vllm serve, --bench-args to vllm bench serve
   serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [options] [-- SBATCH_OPTION...]
                   run a server as a job, wait until it listens and open it on localhost:PORT; Ctrl-C cancels the job;
                   --args appends OPTIONS, as typed, to the vllm or tensorboard command;
@@ -786,6 +853,7 @@ case ${1:-help} in
   shell)  shift; cmd_shell "$@" ;;
   tunnel) shift; cmd_tunnel "$@" ;;
   serve)  shift; cmd_serve "$@" ;;
+  bench)  shift; cmd_bench "$@" ;;
   setup)  shift; cmd_setup "$@" ;;
   model)  shift; cmd_model "$@" ;;
   download) shift; cmd_download "$@" ;;
