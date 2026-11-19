@@ -9,8 +9,8 @@ mkdir -p "$WORK/stubs" "$WORK/proj"
 export LOG="$WORK/calls.log"
 for tool in ssh rsync uv osascript; do
   # STUB_OUT is printed and STUB_EXIT returned, to play the cluster's answer; a call to sbatch
-  # prints STUB_SBATCH instead when it is set.
-  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\ncase "$*" in *sbatch*) printf "%%s" "${STUB_SBATCH:-${STUB_OUT:-}}" ;; *) printf "%%s" "${STUB_OUT:-}" ;; esac\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
+  # prints STUB_SBATCH instead when it is set, and the read of the job log for the port prints STUB_PORT.
+  printf '#!/bin/sh\necho "%s $*" >> "$LOG"\ncase "$*" in *sbatch*) printf "%%s" "${STUB_SBATCH:-${STUB_OUT:-}}" ;; *HPC_PORT*) printf "%%s" "${STUB_PORT:-31337}" ;; *) printf "%%s" "${STUB_OUT:-}" ;; esac\nexit "${STUB_EXIT:-0}"\n' "$tool" > "$WORK/stubs/$tool"
   chmod +x "$WORK/stubs/$tool"
 done
 export PATH="$WORK/stubs:$PATH"
@@ -410,15 +410,17 @@ rm -rf "$WORK/proj/comfy-output"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --time 02:00:00 jupyter
 expect_logged "serve submits with the class preset" "sbatch --parsable --partition=aiq --qos=scavenger"
 expect_logged "serve names the job after the service" "--job-name=serve-jupyter"
-expect_logged "serve wraps the service command with the port" "--ip=0.0.0.0\\ --port=8888"
+expect_logged "serve wraps the service command with the port picked by the job" "--ip=0.0.0.0\\ --port=\\\$HPC_RPORT"
+expect_logged "serve makes the job pick a free port and announce it" "echo\\ HPC_PORT="
 expect_logged "serve polls the state and node of the job" "squeue -h -j 77 -o '%T %N'"
-expect_logged "serve opens the tunnel on the default port" "-L 8888:ainode02:8888 tester@hpcgate.unical.it"
+expect_logged "serve opens the tunnel from the default local port to the port of the job" "-L 8888:ainode02:31337 tester@hpcgate.unical.it"
+expect_logged "serve reads the port from the log of the job" "slurm-77.out"
 expect_logged "serve cancels the job when the tunnel ends" "scancel 77"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 ollama --port 9000
-expect_logged "serve --port replaces the default and the placeholder" "OLLAMA_HOST=0.0.0.0:9000"
-expect_logged "serve --port moves the tunnel" "-L 9000:ainode02:9000"
+expect_logged "serve replaces the placeholder with the port of the job" "OLLAMA_HOST=0.0.0.0:\\\$HPC_RPORT"
+expect_logged "serve --port moves the local end of the tunnel only" "-L 9000:ainode02:31337"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve tiny --time 01:00:00 comfy
-expect_logged "serve comfy listens on its port" "--port\\ 8188"
+expect_logged "serve comfy listens on the port of the job" "--port\\ \\\$HPC_RPORT"
 expect_logged "serve comfy runs in the environment made by setup" "envs/comfy/bin"
 expect_logged "serve comfy hides the user site" "PYTHONNOUSERSITE=1"
 expect_logged "serve comfy points comfy-cli at its environment" "CONDA_PREFIX=\\\$HOME/envs/comfy"
@@ -428,28 +430,28 @@ expect_logged "serve ollama allows only local origins" "OLLAMA_ORIGINS=http://lo
 expect_not_logged "serve ollama no longer allows ASP-Chef" "alviano.net"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B
 expect_logged "serve vllm serves the model given" "vllm\\ serve\\ Qwen/Qwen3-8B"
-expect_logged "serve vllm listens on all interfaces on its port" "--host\\ 0.0.0.0\\ --port\\ 8000"
+expect_logged "serve vllm listens on all interfaces on the port of the job" "--host\\ 0.0.0.0\\ --port\\ \\\$HPC_RPORT"
 expect_logged "serve vllm runs in the environment made by setup" "envs/vllm/bin"
-expect_logged "serve vllm opens the tunnel on port 8000" "-L 8000:ainode02:8000"
+expect_logged "serve vllm opens the tunnel from local port 8000" "-L 8000:ainode02:31337"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard runs
 expect_logged "serve tensorboard reads the log directory given" "--logdir\\ runs"
-expect_logged "serve tensorboard listens on its port" "--port\\ 6006"
+expect_logged "serve tensorboard listens on the port of the job" "--port\\ \\\$HPC_RPORT"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard
 expect_logged "serve tensorboard defaults to the project directory" "--logdir\\ ."
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"
-expect_logged "serve --args appends the options to the vllm command" "--port\\ 8000\\ --reasoning-parser\\ qwen3\\ --max-model-len\\ 8192"
+expect_logged "serve --args appends the options to the vllm command" "--port\\ \\\$HPC_RPORT\\ --reasoning-parser\\ qwen3\\ --max-model-len\\ 8192"
 expect_error "serve --args is refused for a service that does not take it" serve small --time 01:00:00 jupyter --args "--x"
 expect_error "serve --args is refused with --cmd" serve cpu --time 01:00:00 --cmd x --port 1 --args "--x"
 expect_error "serve vllm needs a model" serve medium --time 01:00:00 vllm
 expect_error "serve rejects an argument for a service that takes none" serve small --time 01:00:00 jupyter extra
 expect_error "serve rejects two arguments for vllm" serve medium --time 01:00:00 vllm a b
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 --cmd 'python3 -m http.server __PORT__' --port 8000
-expect_logged "serve --cmd replaces __PORT__" "python3\\ -m\\ http.server\\ 8000"
+expect_logged "serve --cmd replaces __PORT__ with the port of the job" "python3\\ -m\\ http.server\\ \\\$HPC_RPORT"
 expect_logged "serve --cmd names the job" "--job-name=serve-custom"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve small --free --push --time 01:00:00 jupyter
 expect_logged "serve accepts --free" "hpc-free small"
 expect_logged "serve accepts --push" "rsync -az -e"
-expect_logged "serve probes the port from the head node" "exec 3<>/dev/tcp/ainode02/8888"
+expect_logged "serve probes the port from the head node" "exec 3<>/dev/tcp/ainode02/31337"
 # A server that is slow to listen: the probe fails twice, then succeeds; the tunnel opens only after that.
 # Own ssh and sleep stubs, so that the waiting is neither real nor lost in the shared stub.
 mkdir -p "$WORK/slow"
@@ -459,6 +461,7 @@ cat > "$WORK/slow/ssh" <<'STUB'
 echo "ssh $*" >> "$LOG"
 case "$*" in
   *sbatch*) printf 77 ;;
+  *HPC_PORT*) m=$(cat "$WORK/portreads" 2>/dev/null || echo 0); echo $((m + 1)) > "$WORK/portreads"; [ "$m" -lt "${PORT_LATE:-0}" ] || printf 4242 ;;
   *dev/tcp*) n=$(cat "$WORK/probes" 2>/dev/null || echo 0); echo $((n + 1)) > "$WORK/probes"; [ "$n" -ge "${PROBES_FAIL:-2}" ] ;;
   *"squeue -h -j 77 -o %T"*) [ -n "${JOB_DIES:-}" ] || printf RUNNING; [ -z "${JOB_DIES:-}" ] || printf FAILED ;;
   *squeue*) printf "RUNNING ainode02" ;;
@@ -468,8 +471,12 @@ chmod +x "$WORK/slow/"*
 export WORK
 rm -f "$WORK/probes"; PATH="$WORK/slow:$PATH" run serve small --time 01:00:00 jupyter
 [[ $(cat "$WORK/probes") -eq 3 ]] && ok "serve probes until the port opens" || fail "serve probes until the port opens ($(cat "$WORK/probes"))"
-grep -q "waiting for the server on port 8888" "$WORK/out" && grep -q "ready, open http://localhost:8888" "$WORK/out" && ok "serve says it waits, then that it is ready" || { fail "serve says it waits, then that it is ready"; cat "$WORK/out"; }
-expect_logged "serve opens the tunnel once the port is open" "-L 8888:ainode02:8888"
+grep -q "waiting for the server" "$WORK/out" && grep -q "ready on port 4242 of the node, open http://localhost:8888" "$WORK/out" && ok "serve says it waits, then that it is ready" || { fail "serve says it waits, then that it is ready"; cat "$WORK/out"; }
+expect_logged "serve opens the tunnel once the port is open" "-L 8888:ainode02:4242"
+# The job has not announced its port yet: serve must not probe anything until it has.
+rm -f "$WORK/probes" "$WORK/portreads"; PORT_LATE=2 PROBES_FAIL=0 PATH="$WORK/slow:$PATH" run serve small --time 01:00:00 jupyter
+[[ $(cat "$WORK/portreads") -eq 3 ]] && ok "serve keeps reading the log until the job announces its port" || fail "serve keeps reading the log until the job announces its port ($(cat "$WORK/portreads"))"
+[[ $(cat "$WORK/probes") -eq 1 ]] && ok "serve probes only once the port is known" || fail "serve probes only once the port is known ($(cat "$WORK/probes"))"
 rm -f "$WORK/probes"; JOB_DIES=1 PATH="$WORK/slow:$PATH" expect_error "serve fails when the job dies while waiting" serve small --time 01:00:00 jupyter
 grep -q "FAILED before the server was ready" "$WORK/out" && ok "serve reports the state of the dead job" || { fail "serve reports the state of the dead job"; cat "$WORK/out"; }
 expect_not_logged "serve does not tunnel to a dead job" "-L 8888"

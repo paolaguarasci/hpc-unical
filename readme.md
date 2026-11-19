@@ -335,7 +335,7 @@ hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LO
 
 Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then until the server accepts connections on its port (a TCP probe from the head node, every 5 seconds: vLLM, for instance, opens its port only after minutes of loading), then forwards `localhost:PORT` to its node, as `tunnel` does. If the job leaves `RUNNING` while it waits, `serve` fails and points to `hpc logs ID`; there is no separate timeout, the limit is the job's `--time`. **Ctrl-C closes the tunnel and cancels the job**; so does a dropped connection. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
 
-| Service   | Default port | Command run on the node                                                                  |
+| Service   | Default local port | Command run on the node                                                                  |
 | --------- | ------------ | ---------------------------------------------------------------------------------------- |
 | `jupyter` | 8888         | `jupyter lab --no-browser --ip=0.0.0.0` (the token is in `hpc logs ID`)                  |
 | `comfy`   | 8188         | `~/envs/comfy/bin/comfy-cli launch` with `~/comfy/ComfyUI/` as the default workspace     |
@@ -345,7 +345,7 @@ Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of 
 
 `--args OPTIONS` (only for `vllm` and `tensorboard`) appends `OPTIONS`, as typed, to the command of the service, for instance `--args "--reasoning-parser qwen3 --max-model-len 8192"`; the options are not validated, so a wrong one makes the server fail at start (see `hpc logs ID`). Everything after `--` is, as in `submit`, for Slurm, not for the server.
 
-With `--cmd`, `__PORT__` in the command is replaced by `--port`. The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
+The nodes are shared with other users, so a fixed port can already be taken there: **the job picks a free port on the node** (random, between 20000 and 39999, one nobody listens on), announces it in its log as `HPC_PORT=N`, and runs the service on it. `serve` reads that line, waits for the port, and forwards `localhost:PORT` to it, so `--port` and the "default local port" above are the ports on your machine only. With `--cmd`, `__PORT__` in the command is replaced by the port picked by the job (`--port` is still required, as the local port). The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
 
 ```bash
 hpc serve small --time 04:00:00 jupyter                       # http://localhost:8888
