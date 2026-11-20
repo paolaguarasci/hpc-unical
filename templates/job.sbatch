@@ -8,6 +8,8 @@ cd "$SLURM_SUBMIT_DIR"
 
 # Activate the environment that contains the application's dependencies, e.g.:
 # source "$(conda info --base)/etc/profile.d/conda.sh" && conda activate pytorch
+# or, after `hpc env` (uv env in ~/envs/NAME; NAME defaults to the project directory):
+# unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH="$HOME/envs/NAME/bin:$PATH"
 
 # Preemption sends SIGTERM and allows a 270-second grace period. Bash runs a trap only
 # when the foreground command ends, so the application runs in the background and the

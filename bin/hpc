@@ -432,6 +432,70 @@ cmd_setup() {
   cpu_node_run "$time" "$SETUP_SCRIPT" hpc-setup "${targets[@]}"
 }
 
+# What `hpc env` runs on a cpu node: bootstrap uv if needed, then `uv sync --frozen` of the pushed
+# project into ~/envs/NAME (UV_PROJECT_ENVIRONMENT). Arguments: NAME PROJECT_REL (under $HOME).
+ENV_SCRIPT=$(cat <<'EOF'
+set -u -o pipefail
+name=$1
+project=$HOME/$2
+env=$HOME/envs/$name
+fail() { echo "FAIL - $1"; exit 1; }
+ok()   { echo "ok   - $1"; }
+online() { curl -fsI --max-time 15 "$1" >/dev/null 2>&1; }
+
+[ -f "$project/pyproject.toml" ] || fail "no pyproject.toml in $project: run hpc push first"
+[ -f "$project/uv.lock" ] || fail "no uv.lock in $project: run 'uv lock' locally, then hpc env"
+
+export PATH="$HOME/.local/bin:$PATH"
+if ! command -v uv >/dev/null; then
+  online https://astral.sh || fail "this node cannot reach astral.sh (needed to install uv)"
+  curl -LsSf https://astral.sh/uv/install.sh | sh || fail "uv install failed"
+  export PATH="$HOME/.local/bin:$PATH"
+  command -v uv >/dev/null || fail "uv not found after install"
+  ok "uv installed in ~/.local/bin"
+else
+  ok "uv is installed ($(command -v uv))"
+fi
+
+online https://pypi.org || fail "this node cannot reach pypi.org"
+unset VIRTUAL_ENV
+export PYTHONNOUSERSITE=1 UV_PROJECT_ENVIRONMENT="$env"
+mkdir -p "$HOME/envs"
+if uv sync --frozen --project "$project"
+then
+  ok "environment synced to $env"
+  echo "activate in a job script:"
+  echo "  unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/$name/bin:\$PATH"
+else
+  fail "uv sync --frozen failed for $project -> $env"
+fi
+EOF
+)
+
+# Sync a uv environment on the cluster from the local pyproject.toml + uv.lock into ~/envs/NAME
+# (default NAME: current directory). Always pushes first; runs in a cpu job.
+cmd_env() {
+  local time=01:00:00 name=''
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --time) time=${2:?--time needs a value}; shift 2 ;;
+      -*)     die "usage: hpc env [NAME] [--time HH:MM:SS]" ;;
+      *)      [[ -z $name ]] || die "usage: hpc env [NAME] [--time HH:MM:SS]"
+              name=$1; shift ;;
+    esac
+  done
+  [[ -n $name ]] || name=$(basename "$PWD")
+  [[ $name =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]] || die "invalid environment name '$name'"
+  case $name in
+    comfy|vllm|tensorboard|openwebui|mlflow)
+      die "environment name '$name' is reserved for hpc setup; choose another name" ;;
+  esac
+  [[ -f pyproject.toml ]] || die "no pyproject.toml in the current directory"
+  [[ -f uv.lock ]] || die "no uv.lock in the current directory (run 'uv lock' locally first)"
+  cmd_push
+  cpu_node_run "$time" "$ENV_SCRIPT" hpc-env "$name" "$REMOTE_DIR"
+}
+
 # What `hpc cache` runs on a cpu node (bash -c; the arguments are the action, yes|no, and what the action
 # needs): measuring the home is slow on this disk (many small files), hence a job and not the head node.
 # Deleting is a dry run unless the second argument is yes.
@@ -468,7 +532,8 @@ cache_report() {
   if [ -d "$home/comfy/ComfyUI/models" ]; then
     echo; echo "largest ComfyUI model files (hpc cache rm comfy KIND/FILE):"
     # Skip placeholder stubs (put_*_here and the like): only files of at least 1 MiB.
-    find "$home/comfy/ComfyUI/models" -type f -size +1M -exec du -k {} + 2>/dev/null | sort -rn | head -n 10 | while read -r kb path; do
+    # Use \; not +: find's + batches via ARG_MAX, which some sandboxes deny (empty list, stderr silenced).
+    find "$home/comfy/ComfyUI/models" -type f -size +1M -exec du -k {} \; 2>/dev/null | sort -rn | head -n 10 | while read -r kb path; do
       printf '%8s  %s\n' "$(human "$kb")" "${path#"$home/comfy/ComfyUI/models/"}"
     done
   fi
@@ -1061,6 +1126,10 @@ usage: hpc COMMAND [ARGS]
                   --args appends OPTIONS, as typed, to vllm, tensorboard, openwebui, llamacpp or mlflow;
                   PORT is the local one; the job picks a free port on the node and in --cmd __PORT__ is replaced by it;
                   the server must listen on 0.0.0.0
+  env [NAME] [--time T]
+                  sync a uv environment on the cluster into ~/envs/NAME (default: current directory name)
+                  from local pyproject.toml + uv.lock (--frozen); pushes first; installs uv if missing;
+                  runs in a cpu job (--time default 01:00:00); prints how to activate it in a job script
   setup [ollama] [comfy] [vllm] [tensorboard] [openwebui] [llamacpp] [mlflow] [--time T]
                   check ollama (~/.local), ComfyUI (~/comfy), llama-server (~/.local/bin), and the pip envs in
                   ~/envs (vLLM, TensorBoard, Open WebUI, MLflow) on a cpu node and install what is missing,
@@ -1108,6 +1177,7 @@ case ${1:-help} in
   serve)  shift; cmd_serve "$@" ;;
   cache)  shift; cmd_cache "$@" ;;
   bench)  shift; cmd_bench "$@" ;;
+  env)    shift; cmd_env "$@" ;;
   setup)  shift; cmd_setup "$@" ;;
   model)  shift; cmd_model "$@" ;;
   download) shift; cmd_download "$@" ;;

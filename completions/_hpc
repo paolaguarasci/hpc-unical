@@ -27,6 +27,7 @@ _hpc() {
     'serve:run a server as a job and open it on localhost'
     'bench:benchmark vLLM on a GPU class'
     'cache:space used in the home; clean caches, remove a model'
+    'env:sync a uv environment on the cluster into ~/envs'
     'notify:notify when a job ends'
     'setup:check and install ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow'
     'model:download a model on the cluster'

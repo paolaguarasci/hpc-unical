@@ -63,6 +63,7 @@ Official reference: [Getting started with the UniCal HPC cluster](https://hpcgat
     - [`serve`](#serve)
     - [`bench`](#bench)
     - [`cache`](#cache)
+    - [`env`](#env)
     - [`setup`](#setup)
     - [`model`](#model)
     - [`download`](#download)
@@ -156,6 +157,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama, vLLM, TensorBoard, Open WebUI, llama.cpp, MLflow or a custom server on localhost |
 | `hpc bench CLASS --time T MODEL`                              | Benchmark vLLM on a GPU class: tokens per second, time to first token, time per token       |
 | `hpc cache [clean\|rm KIND NAME] [--yes]`                     | Space used in the home by location; remove the caches or one model (dry run unless `--yes`)  |
+| `hpc env [NAME]`                                              | Sync a uv environment on the cluster into `~/envs/NAME` from local `pyproject.toml` + `uv.lock` |
 | `hpc setup [ollama] [comfy] [vllm] [tensorboard]`             | Check ollama, ComfyUI, vLLM and TensorBoard on a cpu node and install what is missing                        |
 | `hpc model comfy [--to KIND] URL...`, `hpc model ollama NAME` | Download models on the cluster, in a cpu job                                                |
 | `hpc model list [comfy\|ollama]`                              | List the downloadable ComfyUI models and the Ollama models installed, marking those present |
@@ -407,6 +409,28 @@ hpc cache rm comfy loras/old.safetensors   # dry run
 hpc cache rm ollama llama3.2:1b --yes
 ```
 
+### `env`
+
+```bash
+hpc env [NAME] [--time HH:MM:SS]
+```
+
+Creates or updates a [uv](https://docs.astral.sh/uv/) virtual environment on the cluster for the current project. It always runs `hpc push` first, then a `cpu` job (default `--time 01:00:00`) that installs `uv` into `~/.local` if it is missing and runs `uv sync --frozen` into `~/envs/NAME`. `NAME` defaults to the current directory name. The names used by [`setup`](#setup) (`comfy`, `vllm`, `tensorboard`, `openwebui`, `mlflow`) are refused, so a uv sync cannot overwrite those conda environments.
+
+Needs a local `pyproject.toml` and `uv.lock` (`uv lock` on your machine first): `--frozen` fails if the lock is missing or out of date, so the cluster gets the same versions you locked. The job prints the line to put in a batch script:
+
+```bash
+unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=$HOME/envs/NAME/bin:$PATH
+```
+
+`templates/job.sbatch` has the same comment. The environment shows up in [`hpc cache`](#cache) like the others under `~/envs`; `hpc` never deletes it.
+
+```bash
+uv lock                         # on this machine
+hpc env                         # ~/envs/<current directory>
+hpc env myproj --time 00:30:00
+```
+
 ### `setup`
 
 ```bash
@@ -577,7 +601,7 @@ cp templates/job.sbatch train.sbatch
 
 - output to `<job-name>-<job-id>.out`;
 - `cd "$SLURM_SUBMIT_DIR"`, so relative paths resolve inside the project directory;
-- a commented line to activate your Conda environment (a Jupyter kernel selection does **not** configure a batch job, so activate the environment inside the script);
+- a commented line to activate your Conda environment, or the uv environment created by [`hpc env`](#env) (a Jupyter kernel selection does **not** configure a batch job, so activate the environment inside the script);
 - a SIGTERM trap that forwards the signal to your application, which must checkpoint on its own;
 - `srun python train.py`, the line to replace with your command.
 

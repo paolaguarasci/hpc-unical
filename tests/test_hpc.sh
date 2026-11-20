@@ -194,6 +194,48 @@ chmod +x "$WORK/h2/envs/comfy/bin/"*
 out=$(HOME="$WORK/h2" PATH="$WORK/yes:$PATH" bash -c "$script" x comfy 2>&1); code=$?
 [[ $code -ne 0 && $out == *"has no PyTorch"* ]] && ok "setup refuses a ComfyUI whose environment has no PyTorch" || { fail "setup refuses a ComfyUI whose environment has no PyTorch"; echo "$out"; }
 
+# --- env: sync a uv environment on the cluster into ~/envs/NAME ---
+touch "$WORK/proj/pyproject.toml" "$WORK/proj/uv.lock"
+run env
+expect_logged "env pushes first" "rsync -az -e"
+expect_logged "env runs srun on a cpu node" "srun --partition=aiq --qos=scavenger --nodes=1 --ntasks=1 --cpus-per-task=1 --mem=16G --time=01:00:00 bash -c"
+expect_not_logged "env asks for no GPU" "--gres"
+expect_logged "env defaults the name to the current directory" "hpc-env proj projects/proj"
+expect_logged "env syncs with --frozen into ~/envs" "UV_PROJECT_ENVIRONMENT="
+expect_logged "env uses uv sync --frozen" "uv sync --frozen --project"
+expect_logged "env bootstraps uv when missing" "astral.sh/uv/install.sh"
+run env myproj --time 00:20:00
+expect_logged "env takes an explicit name" "hpc-env myproj projects/proj"
+expect_logged "env --time overrides the default" "--time=00:20:00"
+expect_error "env refuses a reserved setup name" env vllm
+expect_error "env rejects an unknown option" env --gpu
+rm -f "$WORK/proj/uv.lock"
+expect_error "env refuses without a local uv.lock" env
+rm -f "$WORK/proj/pyproject.toml"
+expect_error "env refuses without a local pyproject.toml" env
+# The script itself: no network and no uv → FAIL; uv present but no pypi → FAIL; stub uv + ok curl → sync.
+escript=$(sed -n "/^ENV_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
+mkdir -p "$WORK/eh/projects/proj" "$WORK/eh/nonet" "$WORK/eh/oknet" "$WORK/eh/.local/bin"
+touch "$WORK/eh/projects/proj/pyproject.toml" "$WORK/eh/projects/proj/uv.lock"
+printf '#!/bin/sh\nexit 22\n' > "$WORK/eh/nonet/curl"; chmod +x "$WORK/eh/nonet/curl"
+out=$(HOME="$WORK/eh" PATH="$WORK/eh/nonet:/usr/bin:/bin" bash -c "$escript" hpc-env proj projects/proj 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - this node cannot reach astral.sh"* ]] && ok "env script fails explicitly without network when uv is missing" || { fail "env script fails explicitly without network when uv is missing"; echo "$out"; }
+cat > "$WORK/eh/.local/bin/uv" <<'UV'
+#!/bin/sh
+echo "uv $*" >&2
+exit 0
+UV
+chmod +x "$WORK/eh/.local/bin/uv"
+out=$(HOME="$WORK/eh" PATH="$WORK/eh/nonet:$WORK/eh/.local/bin:/usr/bin:/bin" bash -c "$escript" hpc-env proj projects/proj 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - this node cannot reach pypi.org"* ]] && ok "env script fails explicitly without pypi when uv is present" || { fail "env script fails explicitly without pypi when uv is present"; echo "$out"; }
+printf '#!/bin/sh\nexit 0\n' > "$WORK/eh/oknet/curl"; chmod +x "$WORK/eh/oknet/curl"
+out=$(HOME="$WORK/eh" PATH="$WORK/eh/oknet:$WORK/eh/.local/bin:/usr/bin:/bin" bash -c "$escript" hpc-env proj projects/proj 2>&1); code=$?
+[[ $code -eq 0 && $out == *"ok   - uv is installed"* && $out == *"ok   - environment synced to"*"/envs/proj"* ]] && ok "env script syncs when uv is already installed" || { fail "env script syncs when uv is already installed"; echo "$out"; }
+[[ $out == *"uv sync --frozen --project"* && $out == *"PATH=\$HOME/envs/proj/bin:\$PATH"* ]] && ok "env script uses --frozen and prints the activation line" || { fail "env script uses --frozen and prints the activation line"; echo "$out"; }
+rm -f "$WORK/eh/projects/proj/uv.lock"
+out=$(HOME="$WORK/eh" PATH="$WORK/eh/oknet:$WORK/eh/.local/bin:/usr/bin:/bin" bash -c "$escript" hpc-env proj projects/proj 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - no uv.lock"* ]] && ok "env script refuses a project without uv.lock" || { fail "env script refuses a project without uv.lock"; echo "$out"; }
+
 # --- bench: one job that starts vLLM and runs vllm bench serve against it ---
 STUB_SBATCH=77 run bench tiny --time 00:30:00 Qwen/Qwen3-0.6B
 expect_logged "bench submits a job named after the benchmark" "--job-name=bench-vllm"
