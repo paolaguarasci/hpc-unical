@@ -158,237 +158,325 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
     <section id="serve" class="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
       <h2 class="font-display text-4xl font-extrabold sm:text-6xl">Serve templates</h2>
       <p class="mt-3 max-w-2xl font-extralight text-2xl text-fg/80">
-        Copy a command, run it with the VPN on, open the local URL. Ctrl-C cancels the job.
+        Start a service as a Slurm job; it opens on <code class="font-mono text-lg font-medium">localhost</code>.
       </p>
       <p class="mt-4 max-w-3xl text-sm text-mute">
-        One-time install: <code class="font-mono text-fg">hpc setup</code> (or the named target). Jupyter needs <code class="font-mono text-fg">jupyter</code> already in your login environment.
-        Replace <code class="font-mono text-fg">MODEL</code>, paths and node addresses with yours.
+        VPN on. Install once with <code class="font-mono text-fg">hpc setup</code> (Jupyter needs <code class="font-mono text-fg">jupyter</code> in your login environment).
+        Ctrl-C closes the tunnel and cancels the job. Replace <code class="font-mono text-fg">MODEL</code> and paths with yours.
       </p>
 
-      <div class="mt-12 grid gap-5 md:grid-cols-2">
+      <div class="mt-12 grid gap-5 sm:grid-cols-2">
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">JupyterLab</h3>
-            <span class="font-mono text-xs text-accent">:8888</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/jupyter.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">JupyterLab</h3>
+                <span class="font-mono text-xs text-accent">:8888</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Notebooks on a GPU slice. Token in <code class="font-mono text-fg">hpc logs ID</code>.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Notebooks on a GPU slice. Token in <code class="font-mono text-fg">hpc logs ID</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">ComfyUI</h3>
-            <span class="font-mono text-xs text-accent">:8188</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/comfyui.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">ComfyUI</h3>
+                <span class="font-mono text-xs text-accent">:8188</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Image and video workflows. Needs <code class="font-mono text-fg">hpc setup comfy</code>.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Image and video workflows. Needs <code class="font-mono text-fg">hpc setup comfy</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 comfy</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 comfy">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Ollama</h3>
-            <span class="font-mono text-xs text-accent">:11434</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Local LLM API. Pull models with <code class="font-mono text-fg">hpc model ollama NAME</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve tiny --time 04:00:00 ollama</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve tiny --time 04:00:00 ollama">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 comfy</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 comfy">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">vLLM</h3>
-            <span class="font-mono text-xs text-accent">:8000/v1</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/ollama.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Ollama</h3>
+                <span class="font-mono text-xs text-accent">:11434</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Local LLM API. Pull models with <code class="font-mono text-fg">hpc model ollama NAME</code>.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">OpenAI-compatible API. Needs <code class="font-mono text-fg">hpc setup vllm</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">TensorBoard</h3>
-            <span class="font-mono text-xs text-accent">:6006</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Training curves from a log directory on the cluster.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 tensorboard runs</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 tensorboard runs">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve tiny --time 04:00:00 ollama</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve tiny --time 04:00:00 ollama">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Open WebUI</h3>
-            <span class="font-mono text-xs text-accent">:8080</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/vllm.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">vLLM</h3>
+                <span class="font-mono text-xs text-accent">:8000/v1</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">OpenAI-compatible API. Needs <code class="font-mono text-fg">hpc setup vllm</code>.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Chat UI on CPU. Pass a backend URL to point at ollama or vLLM.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">llama.cpp</h3>
-            <span class="font-mono text-xs text-accent">:8080</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">GGUF server. <code class="font-mono text-fg">MODEL</code> is a path on the cluster.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">MLflow</h3>
-            <span class="font-mono text-xs text-accent">:5000</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/tensorflow.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">TensorBoard</h3>
+                <span class="font-mono text-xs text-accent">:6006</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Training curves from a log directory on the cluster.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Experiment tracking. Store defaults to <code class="font-mono text-fg">~/mlflow</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 mlflow</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 mlflow">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 tensorboard runs</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 tensorboard runs">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/openwebui.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Open WebUI</h3>
+                <span class="font-mono text-xs text-accent">:8080</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Chat UI on CPU. Pass a backend URL for ollama or vLLM.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/llamacpp.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">llama.cpp</h3>
+                <span class="font-mono text-xs text-accent">:8080</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">GGUF server. <code class="font-mono text-fg">MODEL</code> is a path on the cluster.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/mlflow.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">MLflow</h3>
+                <span class="font-mono text-xs text-accent">:5000</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Experiment tracking. Store defaults to <code class="font-mono text-fg">~/mlflow</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 mlflow</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 mlflow">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/n8n.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">n8n</h3>
+                <span class="font-mono text-xs text-accent">:5678</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Workflow editor via <code class="font-mono text-fg">--cmd</code>. Needs <code class="font-mono text-fg">n8n</code> on the node; data in <code class="font-mono text-fg">~/.n8n</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/gradio.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Gradio</h3>
+                <span class="font-mono text-xs text-accent">:7860</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Your <code class="font-mono text-fg">app.py</code> via Gradio env vars. Sync with <code class="font-mono text-fg">--push</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/streamlit.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Streamlit</h3>
+                <span class="font-mono text-xs text-accent">:8501</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Bind to all interfaces so the tunnel can reach the node.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/fastapi.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">FastAPI</h3>
+                <span class="font-mono text-xs text-accent">:8000</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Replace <code class="font-mono text-fg">main:app</code> with your module path.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000">Copy command</button>
           </div>
         </article>
 
       </div>
 
-      <h3 class="mt-16 font-display text-3xl font-extrabold sm:text-4xl">More recipes</h3>
+      <h3 class="mt-16 font-display text-3xl font-extrabold sm:text-4xl">Handy variants</h3>
       <p class="mt-3 max-w-2xl text-sm text-mute">
-        Variants of the presets and a few <code class="font-mono text-fg">--cmd</code> patterns. The job picks a free port on the node; <code class="font-mono text-fg">--port</code> is only the port on your machine.
+        Same services, different flags. <code class="font-mono text-fg">--port</code> is only the port on your machine; the job picks a free one on the node.
       </p>
 
-      <div class="mt-8 grid gap-5 md:grid-cols-2">
+      <div class="mt-8 grid gap-5 sm:grid-cols-2">
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">vLLM with extra args</h3>
-            <span class="font-mono text-xs text-accent">:8000/v1</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/vllm.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">vLLM + args</h3>
+                <span class="font-mono text-xs text-accent">:8000/v1</span>
+              </div>
+              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">--args</code> is appended to <code class="font-mono text-fg">vllm serve</code> as typed.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute"><code class="font-mono text-fg">--args</code> is appended to <code class="font-mono text-fg">vllm serve</code> as typed.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args &quot;--reasoning-parser qwen3 --max-model-len 8192&quot;">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args &quot;--reasoning-parser qwen3 --max-model-len 8192&quot;">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Open WebUI → Ollama</h3>
-            <span class="font-mono text-xs text-accent">:8080</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/openwebui.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Open WebUI → Ollama</h3>
+                <span class="font-mono text-xs text-accent">:8080</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">From the ollama line: <code class="font-mono text-fg">http://NODE:PORT</code>.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">From the ollama serve line: node and remote port as <code class="font-mono text-fg">http://NODE:PORT</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Open WebUI → vLLM</h3>
-            <span class="font-mono text-xs text-accent">:8080</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">URL must end in <code class="font-mono text-fg">/v1</code> for an OpenAI-compatible backend.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui http://ainode02:30123/v1</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui http://ainode02:30123/v1">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Jupyter, booked + push</h3>
-            <span class="font-mono text-xs text-accent">:8888</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/jupyter.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Jupyter booked</h3>
+                <span class="font-mono text-xs text-accent">:8888</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Push the project; protected QoS when you hold a booking.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Sync the project first; use a protected QoS when you hold a booking.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter --push --booked</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter --push --booked">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Ollama on another local port</h3>
-            <span class="font-mono text-xs text-accent">:11500</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">When the default local port is already taken on your machine.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 ollama --port 11500</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 ollama --port 11500">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter --push --booked</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter --push --booked">Copy command</button>
           </div>
         </article>
 
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Custom HTTP server</h3>
-            <span class="font-mono text-xs text-accent">:8000</span>
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/http.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">HTTP smoke test</h3>
+                <span class="font-mono text-xs text-accent">:8000</span>
+              </div>
+              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">__PORT__</code> becomes the free port on the node.</p>
+            </div>
           </div>
-          <p class="mt-2 flex-1 text-sm text-mute"><code class="font-mono text-fg">__PORT__</code> becomes the free port picked on the node.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Gradio app</h3>
-            <span class="font-mono text-xs text-accent">:7860</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Uses Gradio's server env vars so the tunnel can reach the node. Sync with <code class="font-mono text-fg">--push</code>.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">Streamlit app</h3>
-            <span class="font-mono text-xs text-accent">:8501</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Bind to all interfaces so the tunnel can reach the node.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">FastAPI / Uvicorn</h3>
-            <span class="font-mono text-xs text-accent">:8000</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Replace <code class="font-mono text-fg">main:app</code> with your module path.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000">Copy</button>
-          </div>
-        </article>
-
-        <article class="flex flex-col rounded-2xl border border-line bg-panel/70 p-6">
-          <div class="flex items-baseline justify-between gap-3">
-            <h3 class="text-xl font-extrabold">MLflow custom store</h3>
-            <span class="font-mono text-xs text-accent">:5000</span>
-          </div>
-          <p class="mt-2 flex-1 text-sm text-mute">Persists under a path you choose on the shared home.</p>
-          <div class="mt-4 flex items-start gap-2 rounded-lg bg-ink/70 p-3">
-            <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 mlflow ~/projects/my-run/mlflow</pre>
-            <button type="button" class="copy-btn shrink-0 rounded-full border border-line px-3 py-1 font-mono text-[11px] text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 mlflow ~/projects/my-run/mlflow">Copy</button>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000</pre>
+            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000">Copy command</button>
           </div>
         </article>
 
@@ -444,9 +532,8 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
       btn.addEventListener('click', function () {
         var text = btn.getAttribute('data-copy') || '';
         var done = function () {
-          var prev = btn.textContent;
           btn.textContent = 'Copied';
-          setTimeout(function () { btn.textContent = prev; }, 1200);
+          setTimeout(function () { btn.textContent = 'Copy command'; }, 1200);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(text).then(done).catch(function () {
