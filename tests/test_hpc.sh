@@ -155,6 +155,8 @@ expect_logged "setup --time overrides the default" "--time=00:20:00"
 run setup vllm tensorboard
 expect_logged "setup takes vllm and tensorboard" "hpc-setup vllm tensorboard"
 expect_logged "setup installs vllm with pip in its own environment" "pip\" install -q \"\$pkg\""
+run setup openwebui llamacpp mlflow
+expect_logged "setup takes openwebui, llamacpp and mlflow" "hpc-setup openwebui llamacpp mlflow"
 expect_error "setup rejects an unknown component" setup nginx
 expect_error "setup rejects an unknown option" setup --gpu
 STUB_EXIT=1 expect_error "setup fails when the cluster reports a failure" setup ollama
@@ -174,6 +176,14 @@ out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x vllm te
 mkdir -p "$WORK/h3/envs/vllm/bin"; printf '#!/bin/sh\n' > "$WORK/h3/envs/vllm/bin/vllm"; chmod +x "$WORK/h3/envs/vllm/bin/vllm"
 out=$(HOME="$WORK/h3" PATH="$WORK/nonet:$PATH" bash -c "$script" x vllm 2>&1); code=$?
 [[ $code -eq 0 && $out == "ok   - vllm is installed"* ]] && ok "setup script leaves an installed vllm alone" || { fail "setup script leaves an installed vllm alone"; echo "$out"; }
+
+out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - openwebui: this node cannot reach pypi.org"* && $out == *"FAIL - mlflow: this node cannot reach pypi.org"* && $out == *"FAIL - llamacpp: this node cannot reach github.com"* ]] && ok "setup script fails explicitly for openwebui, mlflow and llamacpp without network" || { fail "setup script fails explicitly for openwebui, mlflow and llamacpp without network"; echo "$out"; }
+mkdir -p "$WORK/h4/envs/openwebui/bin" "$WORK/h4/envs/mlflow/bin" "$WORK/h4/.local/bin"
+printf '#!/bin/sh\n' > "$WORK/h4/envs/openwebui/bin/open-webui"; printf '#!/bin/sh\n' > "$WORK/h4/envs/mlflow/bin/mlflow"; printf '#!/bin/sh\n' > "$WORK/h4/.local/bin/llama-server"
+chmod +x "$WORK/h4/envs/openwebui/bin/open-webui" "$WORK/h4/envs/mlflow/bin/mlflow" "$WORK/h4/.local/bin/llama-server"
+out=$(HOME="$WORK/h4" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp 2>&1); code=$?
+[[ $code -eq 0 && $out == *"ok   - openwebui is installed"* && $out == *"ok   - mlflow is installed"* && $out == *"ok   - llamacpp is installed"* ]] && ok "setup script leaves installed openwebui, mlflow and llamacpp alone" || { fail "setup script leaves installed openwebui, mlflow and llamacpp alone"; echo "$out"; }
 
 # ComfyUI present but the environment without PyTorch (a past install that went to ~/.local): the script
 # must refuse, not report ok and not reinstall over it.
@@ -279,16 +289,22 @@ expect_error "cache refuses an unknown option" cache --force
 # The job script itself, on a fake home: sizes, dry run, deletion, refusals.
 cscript=$(sed -n "/^CACHE_SCRIPT=\$(cat <<'EOF'/,/^EOF$/p" "$ROOT/bin/hpc" | sed '1d;$d')
 ch="$WORK/ch"
-mkdir -p "$ch/comfy/ComfyUI/models/loras" "$ch/envs/vllm" "$ch/.cache/pip" "$ch/.cache/uv" "$ch/.conda/pkgs" "$ch/.cache/huggingface/hub/models--org--m" "$ch/.local/bin"
+mkdir -p "$ch/comfy/ComfyUI/models/loras" "$ch/comfy/ComfyUI/models/vae" "$ch/envs/vllm" "$ch/.cache/pip" "$ch/.cache/uv" "$ch/.conda/pkgs" \
+  "$ch/.cache/huggingface/hub/models--org--m" "$ch/.cache/huggingface/blobs" "$ch/.cache/huggingface/xet" "$ch/.local/bin"
 head -c 3000000 /dev/zero > "$ch/comfy/ComfyUI/models/loras/a.safetensors"
+echo put_vae_here > "$ch/comfy/ComfyUI/models/vae/put_vae_here"
 head -c 1000000 /dev/zero > "$ch/envs/vllm/x"
 head -c 2000000 /dev/zero > "$ch/.cache/pip/p"
 head -c 500000 /dev/zero > "$ch/.conda/pkgs/c"
 head -c 1500000 /dev/zero > "$ch/.cache/huggingface/hub/models--org--m/w"
-cs() { (cd "$WORK/proj" && HOME="$ch" bash -c "$cscript" hpc-cache "$@" 2>&1); }
+head -c 2500000 /dev/zero > "$ch/.cache/huggingface/blobs/b"
+head -c 800000 /dev/zero > "$ch/.cache/huggingface/xet/x"
+cs() { (cd "$WORK/proj" && HOME="$ch" PATH="$ch/.local/bin:$PATH" bash -c "$cscript" hpc-cache "$@" 2>&1); }
+# Narrow PATH so a system hf cannot make the fallback path look like the Hub CLI path.
+cs_nohf() { (cd "$WORK/proj" && HOME="$ch" PATH="$ch/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash -c "$cscript" hpc-cache "$@" 2>&1); }
 out=$(cs report no); code=$?
-[[ $code -eq 0 && $out == *"home:"*"free"* && $out == *"ComfyUI models"* && $out == *"environment vllm"* && $out == *"pip cache"* && $out == *"Hugging Face models"* ]] && ok "cache report lists the locations and the free space" || { fail "cache report lists the locations and the free space"; echo "$out"; }
-[[ $out == *"loras/a.safetensors"* && $out == *"org/m"* && $out == *"rm -rf ~/envs/vllm"* ]] && ok "cache report names the largest models and how to free each place" || { fail "cache report names the largest models and how to free each place"; echo "$out"; }
+[[ $code -eq 0 && $out == *"home:"*"free"* && $out == *"ComfyUI models"* && $out == *"environment vllm"* && $out == *"pip cache"* && $out == *"Hugging Face hub"* && $out == *"Hugging Face blobs"* && $out == *"Hugging Face xet"* ]] && ok "cache report lists the locations and the free space" || { fail "cache report lists the locations and the free space"; echo "$out"; }
+[[ $out == *"loras/a.safetensors"* && $out != *"put_vae_here"* && $out == *"org/m"* && $out == *"rm -rf ~/envs/vllm"* ]] && ok "cache report names the largest models and how to free each place" || { fail "cache report names the largest models and how to free each place"; echo "$out"; }
 [[ $(echo "$out" | grep -n "ComfyUI models" | head -1 | cut -d: -f1) -lt $(echo "$out" | grep -n "pip cache" | head -1 | cut -d: -f1) ]] && ok "cache report sorts by size, largest first" || fail "cache report sorts by size, largest first"
 out=$(cs clean no)
 [[ $out == *"would remove"*"pip"* && $out == *"dry run"* && -f "$ch/.cache/pip/p" ]] && ok "cache clean is a dry run and removes nothing" || { fail "cache clean is a dry run and removes nothing"; echo "$out"; }
@@ -300,10 +316,28 @@ out=$(cs rm no comfy loras/missing.safetensors); code=$?
 [[ $code -ne 0 && $out == *"FAIL"* ]] && ok "cache rm comfy fails on a missing file" || { fail "cache rm comfy fails on a missing file"; echo "$out"; }
 out=$(cs rm yes comfy loras/a.safetensors)
 [[ $out == *"removed ComfyUI model"* && ! -e "$ch/comfy/ComfyUI/models/loras/a.safetensors" && -d "$ch/comfy/ComfyUI/models/loras" ]] && ok "cache rm comfy --yes removes the file only" || { fail "cache rm comfy --yes removes the file only"; echo "$out"; }
-out=$(cs rm yes hf org/m)
-[[ $out == *"removed Hugging Face model org/m"* && ! -e "$ch/.cache/huggingface/hub/models--org--m" ]] && ok "cache rm hf --yes removes the model folder" || { fail "cache rm hf --yes removes the model folder"; echo "$out"; }
-out=$(cs rm no hf org/m); code=$?
+# No hf on PATH: fall back to deleting the hub folder and warn about shared blobs/xet.
+out=$(cs_nohf rm yes hf org/m)
+[[ $out == *"removed Hugging Face model org/m"* && $out == *"hf not on PATH"* && ! -e "$ch/.cache/huggingface/hub/models--org--m" && -f "$ch/.cache/huggingface/blobs/b" ]] && ok "cache rm hf --yes without hf removes the hub folder only" || { fail "cache rm hf --yes without hf removes the hub folder only"; echo "$out"; }
+out=$(cs_nohf rm no hf org/m); code=$?
 [[ $code -ne 0 ]] && ok "cache rm hf fails on a missing model" || { fail "cache rm hf fails on a missing model"; echo "$out"; }
+# With hf on PATH: prefer hf cache rm model/ORG/NAME (--dry-run / --yes).
+mkdir -p "$ch/.cache/huggingface/hub/models--org--m"
+head -c 1500000 /dev/zero > "$ch/.cache/huggingface/hub/models--org--m/w"
+cat > "$ch/.local/bin/hf" <<'STUB'
+#!/bin/sh
+echo "$*" > "$HOME/hf-args"
+case " $* " in
+  *" --dry-run "*) echo "Dry run: no files were deleted." ;;
+  *" --yes "*) rm -rf "$HOME/.cache/huggingface/hub/models--org--m"; echo "Deleted 1 repo(s)" ;;
+esac
+STUB
+chmod +x "$ch/.local/bin/hf"
+out=$(cs rm no hf org/m)
+[[ $out == *"Dry run"* && $(cat "$ch/hf-args") == "cache rm model/org/m --dry-run" && -d "$ch/.cache/huggingface/hub/models--org--m" ]] && ok "cache rm hf uses hf cache rm --dry-run when hf is on PATH" || { fail "cache rm hf uses hf cache rm --dry-run when hf is on PATH"; echo "$out"; echo "hf-args: $(cat "$ch/hf-args" 2>/dev/null)"; }
+out=$(cs rm yes hf org/m)
+[[ $out == *"via hf cache rm"* && $(cat "$ch/hf-args") == "cache rm model/org/m --yes" && ! -e "$ch/.cache/huggingface/hub/models--org--m" ]] && ok "cache rm hf --yes uses hf cache rm when hf is on PATH" || { fail "cache rm hf --yes uses hf cache rm when hf is on PATH"; echo "$out"; echo "hf-args: $(cat "$ch/hf-args" 2>/dev/null)"; }
+rm -f "$ch/.local/bin/hf"
 # ollama: a fake binary, with serve as a tiny HTTP server, list printing one model and rm leaving a trace.
 cat > "$ch/.local/bin/ollama" <<'STUB'
 #!/bin/sh
@@ -575,11 +609,29 @@ expect_logged "serve tensorboard reads the log directory given" "--logdir\\ runs
 expect_logged "serve tensorboard listens on the port of the job" "--port\\ \\\$HPC_RPORT"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 tensorboard
 expect_logged "serve tensorboard defaults to the project directory" "--logdir\\ ."
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 openwebui
+expect_logged "serve openwebui runs in the environment made by setup" "envs/openwebui/bin"
+expect_logged "serve openwebui keeps data under the home" "DATA_DIR=\\\$HOME/.open-webui"
+expect_logged "serve openwebui opens the tunnel from local port 8080" "-L 8080:ainode02:31337"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 openwebui http://ainode03:25000
+expect_logged "serve openwebui passes an ollama backend URL" "OLLAMA_BASE_URL=http://ainode03:25000"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 openwebui http://ainode03:25000/v1
+expect_logged "serve openwebui passes a vLLM backend as OpenAI" "OPENAI_API_BASE_URL=http://ainode03:25000/v1"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 llamacpp /tmp/models/m.gguf
+expect_logged "serve llamacpp serves the GGUF given" "llama-server\\ -m\\ /tmp/models/m.gguf"
+expect_logged "serve llamacpp offloads layers to the GPU when built with CUDA" "-ngl\\ 99"
+expect_logged "serve llamacpp opens the tunnel from local port 8080" "-L 8080:ainode02:31337"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 mlflow
+expect_logged "serve mlflow stores under the home by default" "sqlite:///\\\$HOME/mlflow/mlflow.db"
+expect_logged "serve mlflow opens the tunnel from local port 5000" "-L 5000:ainode02:31337"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 mlflow /tmp/mlruns
+expect_logged "serve mlflow takes a store directory" "sqlite:////tmp/mlruns/mlflow.db"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"
 expect_logged "serve --args appends the options to the vllm command" "--port\\ \\\$HPC_RPORT\\ --reasoning-parser\\ qwen3\\ --max-model-len\\ 8192"
 expect_error "serve --args is refused for a service that does not take it" serve small --time 01:00:00 jupyter --args "--x"
 expect_error "serve --args is refused with --cmd" serve cpu --time 01:00:00 --cmd x --port 1 --args "--x"
 expect_error "serve vllm needs a model" serve medium --time 01:00:00 vllm
+expect_error "serve llamacpp needs a model" serve medium --time 01:00:00 llamacpp
 expect_error "serve rejects an argument for a service that takes none" serve small --time 01:00:00 jupyter extra
 expect_error "serve rejects two arguments for vllm" serve medium --time 01:00:00 vllm a b
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 --cmd 'python3 -m http.server __PORT__' --port 8000

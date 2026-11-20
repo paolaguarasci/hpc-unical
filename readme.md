@@ -153,7 +153,7 @@ The demo prints the job ID, the home directory, the working directory, the compu
 | `hpc cancel ID`                                               | Cancel a job                                                                                |
 | `hpc shell CLASS --time T [options]`                          | Interactive shell on a compute node with the preset of `CLASS`                              |
 | `hpc tunnel ID PORT`                                          | Forward a local port to a server run by job `ID`                                            |
-| `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama or a custom server and open it on localhost                    |
+| `hpc serve CLASS --time T SERVICE`                            | Run Jupyter, ComfyUI, Ollama, vLLM, TensorBoard, Open WebUI, llama.cpp, MLflow or a custom server on localhost |
 | `hpc bench CLASS --time T MODEL`                              | Benchmark vLLM on a GPU class: tokens per second, time to first token, time per token       |
 | `hpc cache [clean\|rm KIND NAME] [--yes]`                     | Space used in the home by location; remove the caches or one model (dry run unless `--yes`)  |
 | `hpc setup [ollama] [comfy] [vllm] [tensorboard]`             | Check ollama, ComfyUI, vLLM and TensorBoard on a cpu node and install what is missing                        |
@@ -336,7 +336,7 @@ Forwards `localhost:PORT` to the same port of the compute node of a running job,
 ### `serve`
 
 ```bash
-hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
+hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR]|openwebui [URL]|llamacpp MODEL|mlflow [STORE] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]
 ```
 
 Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of `submit`), waits until it runs, then until the server accepts connections on its port (a TCP probe from the head node, every 5 seconds: vLLM, for instance, opens its port only after minutes of loading), then forwards `localhost:PORT` to its node, as `tunnel` does. If the job leaves `RUNNING` while it waits, `serve` fails and points to `hpc logs ID`; there is no separate timeout, the limit is the job's `--time`. **Ctrl-C closes the tunnel and cancels the job**; so do a `kill` of the `hpc` process (TERM), the closing of the terminal and a dropped connection. Only `kill -9` and a crash of your machine leave the job running until its `--time` expires: `hpc queue` shows it (`serve-<service>`) and `hpc cancel ID` ends it. To catch such leftovers, `serve` lists your active `serve-*` jobs before it submits and prints one warning line for each, with the `hpc cancel ID` command; it only warns, because several services can run together. The job starts in the project directory (use `--push` to sync it first) and is named `serve-<service>`, so several services can run together on different ports.
@@ -348,10 +348,13 @@ Submits the server as a job (`sbatch --wrap`, with the presets and QoS rules of 
 | `ollama`  | 11434        | `~/.local/bin/ollama serve`, with `OLLAMA_ORIGINS=http://localhost:*,http://127.0.0.1:*` |
 | `vllm`    | 8000         | `~/envs/vllm/bin/vllm serve MODEL --host 0.0.0.0` (OpenAI-compatible API; `MODEL` is required)   |
 | `tensorboard` | 6006     | `~/envs/tensorboard/bin/tensorboard --logdir LOGDIR --host 0.0.0.0` (`LOGDIR` defaults to the project directory) |
+| `openwebui` | 8080       | `~/envs/openwebui/bin/open-webui serve --host 0.0.0.0` (optional `URL`: ollama base, or `.../v1` for vLLM) |
+| `llamacpp` | 8080        | `~/.local/bin/llama-server -m MODEL --host 0.0.0.0 -ngl 99` (`MODEL` is a GGUF path on the cluster) |
+| `mlflow`  | 5000         | `~/envs/mlflow/bin/mlflow server --host 0.0.0.0` (store under `~/mlflow`, or `STORE`)   |
 
-`--args OPTIONS` (only for `vllm` and `tensorboard`) appends `OPTIONS`, as typed, to the command of the service, for instance `--args "--reasoning-parser qwen3 --max-model-len 8192"`; the options are not validated, so a wrong one makes the server fail at start (see `hpc logs ID`). Everything after `--` is, as in `submit`, for Slurm, not for the server.
+`--args OPTIONS` (for `vllm`, `tensorboard`, `openwebui`, `llamacpp` and `mlflow`) appends `OPTIONS`, as typed, to the command of the service, for instance `--args "--reasoning-parser qwen3 --max-model-len 8192"`; the options are not validated, so a wrong one makes the server fail at start (see `hpc logs ID`). Everything after `--` is, as in `submit`, for Slurm, not for the server.
 
-The nodes are shared with other users, so a fixed port can already be taken there: **the job picks a free port on the node** (random, between 20000 and 39999, one nobody listens on), announces it in its log as `HPC_PORT=N`, and runs the service on it. `serve` reads that line, waits for the port, and forwards `localhost:PORT` to it, so `--port` and the "default local port" above are the ports on your machine only. With `--cmd`, `__PORT__` in the command is replaced by the port picked by the job (`--port` is still required, as the local port). The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; `comfy` and `ollama` are installed by [`hpc setup`](#setup).
+The nodes are shared with other users, so a fixed port can already be taken there: **the job picks a free port on the node** (random, between 20000 and 39999, one nobody listens on), announces it in its log as `HPC_PORT=N`, and runs the service on it. `serve` reads that line, waits for the port, and forwards `localhost:PORT` to it, so `--port` and the "default local port" above are the ports on your machine only. With `--cmd`, `__PORT__` in the command is replaced by the port picked by the job (`--port` is still required, as the local port). The tunnel reaches the node through the head node, not through its loopback, so **the server must listen on all interfaces** (`0.0.0.0`): other users of the cluster network can reach that port, hence keep a token or another protection enabled. `jupyter` must already be in your environment; the others are installed by [`hpc setup`](#setup).
 
 ```bash
 hpc serve small --time 04:00:00 jupyter                       # http://localhost:8888
@@ -359,6 +362,9 @@ hpc serve medium --time 02:00:00 ollama --port 11500
 hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B           # http://localhost:8000/v1
 hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3"
 hpc serve cpu --time 02:00:00 tensorboard runs                # http://localhost:6006
+hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337 # chat UI → ollama on another job
+hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf # http://localhost:8080
+hpc serve cpu --time 02:00:00 mlflow                          # http://localhost:5000
 hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000
 ```
 
@@ -387,9 +393,9 @@ hpc cache rm comfy KIND/FILE | ollama NAME | hf ORG/NAME [--yes] [--time HH:MM:S
 
 The home of the cluster is a disk shared with other users, without a guaranteed quota or backup, and models and environments take tens of gigabytes. Every form runs in a `cpu` job (`srun`, default `--time 01:00:00`), because measuring the home is slow on that disk (many small files) and must not run on the head node.
 
-- `hpc cache` (or `hpc cache report`) prints the free space of the disk and one line per location, largest first, with how to free it: the ComfyUI models and output, each environment in `~/envs`, the Ollama models, the Hugging Face cache and the pip, uv and conda caches; then the ten largest ComfyUI model files and the Hugging Face models by name. It only reads.
+- `hpc cache` (or `hpc cache report`) prints the free space of the disk and one line per location, largest first, with how to free it: the ComfyUI models and output, each environment in `~/envs`, the Ollama models, the Hugging Face hub / shared blobs / xet caches (three separate lines), and the pip, uv and conda caches; then the ten largest ComfyUI model files of at least 1 MiB (placeholders like `put_*_here` are skipped) and the Hugging Face models by name. It only reads.
 - `hpc cache clean` removes the contents of the pip, uv and conda package caches, which are recreated when needed (the next `hpc setup` is slower). Models and environments are not touched.
-- `hpc cache rm` removes one model: a file of `~/comfy/ComfyUI/models` (`KIND/FILE`, a file and never a whole folder; no spaces, no `..`), an Ollama model (`ollama rm`, on a private server started for the command) or a model of the Hugging Face cache (`ORG/NAME`, in the default `~/.cache/huggingface`).
+- `hpc cache rm` removes one model: a file of `~/comfy/ComfyUI/models` (`KIND/FILE`, a file and never a whole folder; no spaces, no `..`), an Ollama model (`ollama rm`, on a private server started for the command) or a Hugging Face hub model (`ORG/NAME`). For Hugging Face, if `hf` is on `PATH` it runs `hf cache rm model/ORG/NAME` (which also drops unreferenced shared blobs); otherwise it deletes only the hub folder and warns that shared blobs/xet may remain.
 
 **Deleting is a dry run unless `--yes` is given**: without it, `clean` and `rm` say what they would remove and how much space it is, and remove nothing. The command cannot know whether a running job uses a model: such a job would fail. The environments in `~/envs` are never deleted by `hpc`: the report prints the `rm -rf` to run by hand, and `hpc setup` rebuilds them.
 
@@ -404,10 +410,10 @@ hpc cache rm ollama llama3.2:1b --yes
 ### `setup`
 
 ```bash
-hpc setup [ollama] [comfy] [vllm] [tensorboard] [--time HH:MM:SS]
+hpc setup [ollama] [comfy] [vllm] [tensorboard] [openwebui] [llamacpp] [mlflow] [--time HH:MM:SS]
 ```
 
-Checks ollama, ComfyUI, vLLM and TensorBoard and installs what is missing, so that `hpc serve ... ollama|comfy|vllm|tensorboard` works. Without arguments it handles ollama and ComfyUI only: vLLM brings its own PyTorch (several gigabytes), so it is asked for by name. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone.
+Checks ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow and installs what is missing, so that the matching `hpc serve` presets work. Without arguments it handles ollama and ComfyUI only: the others are larger or optional, so they are asked for by name. The work runs in a `cpu` job (`srun`, default `--time 01:00:00`), not on the head node, and prints `ok` or `FAIL` for each component; the exit status is non-zero when one fails. It is safe to run again: what is already installed is left alone. A CUDA build of llama.cpp can need more than an hour: pass `--time` accordingly.
 
 | Component | Installed in                                                                                                                |
 | --------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -415,6 +421,9 @@ Checks ollama, ComfyUI, vLLM and TensorBoard and installs what is missing, so th
 | `comfy`   | conda environment `~/envs/comfy` (Python 3.12, `comfy-cli`) and ComfyUI in `~/comfy/ComfyUI` (`comfy-cli install --nvidia`) |
 | `vllm`    | conda environment `~/envs/vllm` (Python 3.12, `pip install vllm`)                                                           |
 | `tensorboard` | conda environment `~/envs/tensorboard` (Python 3.12, `pip install tensorboard`)                                         |
+| `openwebui` | conda environment `~/envs/openwebui` (Python 3.12, `pip install open-webui`)                                            |
+| `llamacpp` | `~/.local/bin/llama-server`: CUDA build from the latest GitHub release when `nvcc` and `cmake` are on the node, otherwise the official ubuntu-x64 (CPU) archive |
+| `mlflow`  | conda environment `~/envs/mlflow` (Python 3.12, `pip install mlflow`)                                                     |
 
 The ComfyUI install runs with `CONDA_PREFIX` pointing at `~/envs/comfy`, that environment first on the `PATH` and the user site hidden (`PYTHONNOUSERSITE=1`), and `serve comfy` does the same: `comfy-cli` takes its Python from `CONDA_PREFIX`, which a login shell sets to the conda base, and the base cannot be written, so without this pip fails or falls back to `~/.local` and pollutes the base environment. If `~/comfy/ComfyUI` exists but the environment has no PyTorch (a past install that went wrong), `setup` fails instead of reinstalling over it: move `~/comfy` aside and run it again.
 
@@ -589,7 +598,7 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 [`hpc serve`](#serve) runs a server as a Slurm job on a compute node and opens it on `localhost`. The services below have a preset; anything else goes through `--cmd`.
 
 > [!NOTE]
-> The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket).
+> The presets are based on three launcher scripts by Professor Alviano (`hpc-jupy.sh`, `hpc-comfy.sh` and `hpc-ollama.sh`): the service commands and their options come from them. `hpc serve` differs in how it runs the job and the tunnel (a batch job with the presets and QoS rules of `submit`, and a direct SSH forward instead of a reverse tunnel over a unix socket). Open WebUI, llama.cpp and MLflow follow the same pattern as vLLM and TensorBoard.
 
 | Service   | Needs                               | Start                                     | Address                  | Authentication         |
 | --------- | ----------------------------------- | ----------------------------------------- | ------------------------ | ---------------------- |
@@ -598,6 +607,9 @@ hpc wait N && hpc pull checkpoints/latest.pt results.csv
 | `ollama`  | `hpc setup ollama`                  | `hpc serve tiny --time 04:00:00 ollama`   | `http://localhost:11434` | none                   |
 | `vllm`    | `hpc setup vllm`                    | `hpc serve medium --time 04:00:00 vllm MODEL` | `http://localhost:8000/v1` | none               |
 | `tensorboard` | `hpc setup tensorboard`         | `hpc serve cpu --time 04:00:00 tensorboard [LOGDIR]` | `http://localhost:6006` | none          |
+| `openwebui` | `hpc setup openwebui`             | `hpc serve cpu --time 04:00:00 openwebui [URL]` | `http://localhost:8080` | Open WebUI accounts |
+| `llamacpp` | `hpc setup llamacpp`               | `hpc serve medium --time 04:00:00 llamacpp MODEL` | `http://localhost:8080` | none              |
+| `mlflow`  | `hpc setup mlflow`                  | `hpc serve cpu --time 04:00:00 mlflow [STORE]` | `http://localhost:5000` | none                |
 
 ### One-time setup
 
@@ -662,10 +674,29 @@ When a workflow is opened in ComfyUI, the panel "Missing models" lists the files
 - The results (videos, images) are written on the cluster, in `~/comfy/ComfyUI/output` (the video workflows use the `video/` sub-folder). To see them, use the `Save Video` node of the workflow, the queue panel (button in the top right, "Completed" tab) or the "Assets" tab; to copy them to your machine use [`hpc download comfy`](#download), for instance `hpc download comfy --latest 1`.
 - Custom nodes installed from the Manager need Internet access from the compute node.
 
+### Open WebUI
+
+- A chat UI on CPU in front of ollama or vLLM. It does not share a job with the backend: start the backend with `hpc serve ... ollama` or `vllm`, read the node and the remote port from the `ready on port N of the node` line (and `hpc: job … runs on NODE`), then pass that address as the optional URL.
+- `http://NODE:PORT` sets `OLLAMA_BASE_URL`. A URL that ends with `/v1` sets `OPENAI_API_BASE_URL` (vLLM) and a placeholder API key.
+- Data and the first-admin account live in `~/.open-webui` on the shared home. Without a URL, configure the connection in the UI after login.
+- Example: `hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337` then open `http://localhost:8080`.
+
+### llama.cpp
+
+- Serves a GGUF file already on the cluster (`MODEL` is a path, required). Lighter than ollama when you already have the file.
+- `hpc setup llamacpp` builds with CUDA when `nvcc` and `cmake` are on the node (use a longer `--time`); otherwise it installs the official ubuntu-x64 CPU binary. The serve preset always passes `-ngl 99` so a CUDA build offloads to the MIG slice.
+- Example: `hpc serve medium --time 02:00:00 llamacpp ~/models/Llama-3.2-3B-Instruct.gguf`.
+
+### MLflow
+
+- Tracking server for comparing runs (sweeps). Complements TensorBoard (scalars/graphs) with experiment metadata and artifacts.
+- Store defaults to `~/mlflow` (`sqlite` DB + `artifacts/`), so it survives from one `serve` to the next and is independent of the project directory. Pass another directory as the optional argument if needed.
+- Point training jobs at it with `MLFLOW_TRACKING_URI=http://localhost:5000` while the tunnel is up (or `http://NODE:REMOTE_PORT` on the cluster). Example: `hpc serve cpu --time 04:00:00 mlflow`.
+
 ### Security
 
 > [!WARNING]
-> `serve` reaches the node through the head node, so the server listens on **all interfaces** of the node: other users of the cluster network can open the port. Jupyter is protected by its token; **ComfyUI and Ollama have no authentication**. Keep `--time` short, stop the service when you are done and do not process sensitive or personal data with it: the shared `/home` has no confidentiality guarantee.
+> `serve` reaches the node through the head node, so the server listens on **all interfaces** of the node: other users of the cluster network can open the port. Jupyter is protected by its token; Open WebUI by its own accounts; **ComfyUI, Ollama, llama.cpp, vLLM, TensorBoard and MLflow have no authentication**. Keep `--time` short, stop the service when you are done and do not process sensitive or personal data with it: the shared `/home` has no confidentiality guarantee.
 
 ### Problems
 

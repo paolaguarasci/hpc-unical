@@ -28,7 +28,7 @@ _hpc() {
     'bench:benchmark vLLM on a GPU class'
     'cache:space used in the home; clean caches, remove a model'
     'notify:notify when a job ends'
-    'setup:check and install ollama, ComfyUI, vLLM and TensorBoard'
+    'setup:check and install ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow'
     'model:download a model on the cluster'
     'download:copy ComfyUI results to this machine'
     'wait:block until a job ends'
@@ -43,7 +43,7 @@ _hpc() {
   fi
   case $words[2] in
     run|sweep|submit|shell|serve|bench) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
-    setup) _values 'component' ollama comfy vllm tensorboard ;;
+    setup) _values 'component' ollama comfy vllm tensorboard openwebui llamacpp mlflow ;;
     cache) (( CURRENT == 3 )) && _values 'action' report clean rm || { [[ $words[3] == rm && CURRENT -eq 4 ]] && _values 'kind' comfy ollama hf; } ;;
     model) (( CURRENT == 3 )) && _values 'kind' comfy ollama list template || { [[ $words[3] == list ]] && _values 'target' comfy ollama; } ;;
     logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;

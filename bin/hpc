@@ -274,9 +274,10 @@ PICK_PORT='until HPC_RPORT=$((20000 + RANDOM % 20000)); ! (exec 3<>/dev/tcp/127.
 # Service presets, based on the launcher scripts of Professor Alviano (hpc-jupy.sh, hpc-comfy.sh,
 # hpc-ollama.sh): default local port and command (__PORT__ is replaced by the port picked by the job). The tunnel reaches the
 # node through the head node, not through the node's loopback, so a server must listen on all interfaces.
-# vllm and tensorboard are not from those scripts: they take one argument ($2), the model and the log directory,
-# and run from their own environments made by `hpc setup`.
+# vllm, tensorboard, openwebui, llamacpp and mlflow are not from those scripts: they take an optional or required
+# argument ($2) and run from what `hpc setup` installed.
 service() {
+  local root backend_env
   case $1 in
     jupyter) PORT=8888;  SERVICE='exec jupyter lab --no-browser --ip=0.0.0.0 --port=__PORT__' ;;
     # comfy and ollama are the ones installed by `hpc setup`, called by absolute path.
@@ -287,7 +288,34 @@ service() {
       PORT=8000; SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/vllm/bin:\$PATH && exec vllm serve $(printf %q "$2") --host 0.0.0.0 --port __PORT__" ;;
     tensorboard)
       PORT=6006; SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/tensorboard/bin:\$PATH && exec tensorboard --logdir $(printf %q "${2:-.}") --host 0.0.0.0 --port __PORT__" ;;
-    *) die "unknown service '$1' (jupyter|comfy|ollama|vllm|tensorboard, or --cmd)" ;;
+    # Chat UI on CPU in front of another serve job: pass the backend as http://NODE:PORT (ollama) or
+    # http://NODE:PORT/v1 (vLLM / OpenAI-compatible). Auth is Open WebUI's own (first account is admin).
+    openwebui)
+      PORT=8080
+      backend_env=''
+      if [[ -n ${2:-} ]]; then
+        if [[ $2 == */v1 || $2 == */v1/ ]]; then
+          backend_env="OPENAI_API_BASE_URL=$(printf %q "${2%/}") OPENAI_API_KEY=\${OPENAI_API_KEY:-sk-none}"
+        else
+          backend_env="OLLAMA_BASE_URL=$(printf %q "$2")"
+        fi
+      fi
+      SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 DATA_DIR=\$HOME/.open-webui PATH=\$HOME/envs/openwebui/bin:\$PATH${backend_env:+ $backend_env} && mkdir -p \"\$DATA_DIR\" && exec open-webui serve --host 0.0.0.0 --port __PORT__" ;;
+    # GGUF server (lighter than ollama); MODEL is a path on the cluster. -ngl 99 offloads to the GPU when
+    # the binary was built with CUDA (see hpc setup llamacpp); a CPU-only binary ignores it.
+    llamacpp)
+      [[ -n ${2:-} ]] || die "llamacpp needs a GGUF model: hpc serve CLASS --time T llamacpp MODEL"
+      PORT=8080; SERVICE="exec ~/.local/bin/llama-server -m $(printf %q "$2") --host 0.0.0.0 --port __PORT__ -ngl 99" ;;
+    # Experiment tracking next to tensorboard: store under ~/mlflow (or STORE) so it survives the job.
+    mlflow)
+      PORT=5000
+      if [[ -n ${2:-} ]]; then
+        root=$(printf %q "$2")
+        SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/mlflow/bin:\$PATH && mkdir -p $root/artifacts && exec mlflow server --host 0.0.0.0 --port __PORT__ --backend-store-uri sqlite:///$root/mlflow.db --default-artifact-root $root/artifacts"
+      else
+        SERVICE="unset VIRTUAL_ENV; export PYTHONNOUSERSITE=1 PATH=\$HOME/envs/mlflow/bin:\$PATH && mkdir -p \"\$HOME/mlflow/artifacts\" && exec mlflow server --host 0.0.0.0 --port __PORT__ --backend-store-uri sqlite:///\$HOME/mlflow/mlflow.db --default-artifact-root \"\$HOME/mlflow/artifacts\""
+      fi ;;
+    *) die "unknown service '$1' (jupyter|comfy|ollama|vllm|tensorboard|openwebui|llamacpp|mlflow, or --cmd)" ;;
   esac
 }
 
@@ -341,21 +369,63 @@ setup_pip_env() {
 }
 setup_vllm() { setup_pip_env vllm vllm; }
 setup_tensorboard() { setup_pip_env tensorboard tensorboard; }
+setup_mlflow() { setup_pip_env mlflow mlflow; }
+
+# open-webui installs as the open-webui command (hyphen), in ~/envs/openwebui.
+setup_openwebui() {
+  local env=$HOME/envs/openwebui
+  if [ -x "$env/bin/open-webui" ]; then ok "openwebui is installed ($env)"; return; fi
+  online https://pypi.org || { fail openwebui "this node cannot reach pypi.org"; return; }
+  unset VIRTUAL_ENV
+  export PYTHONNOUSERSITE=1
+  if conda create -y -q -p "$env" python=3.12 && "$env/bin/pip" install -q open-webui && [ -x "$env/bin/open-webui" ]
+  then ok "openwebui installed in $env"; else fail openwebui "cannot create the environment $env"; fi
+}
+
+# llama-server in ~/.local/bin: CUDA build when nvcc and cmake are on the node, else the official
+# ubuntu-x64 release (CPU). Pin nothing: take the latest GitHub release tag.
+setup_llamacpp() {
+  local bin=$HOME/.local/bin/llama-server tag tmp dir
+  if [ -x "$bin" ]; then ok "llamacpp is installed ($bin)"; return; fi
+  online https://github.com || { fail llamacpp "this node cannot reach github.com"; return; }
+  mkdir -p "$HOME/.local/bin"
+  tag=$(curl -fsSL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)
+  [ -n "$tag" ] || { fail llamacpp "cannot read the latest llama.cpp release tag"; return; }
+  if command -v nvcc >/dev/null && command -v cmake >/dev/null && command -v git >/dev/null; then
+    tmp=$(mktemp -d) || { fail llamacpp "cannot create a temp directory"; return; }
+    if git clone --depth 1 --branch "$tag" https://github.com/ggml-org/llama.cpp.git "$tmp/src" \
+      && cmake -S "$tmp/src" -B "$tmp/build" -DGGML_CUDA=1 -DCMAKE_BUILD_TYPE=Release \
+      && cmake --build "$tmp/build" -j "$(nproc 2>/dev/null || echo 2)" --target llama-server \
+      && cp "$tmp/build/bin/llama-server" "$bin" && chmod +x "$bin"
+    then ok "llamacpp installed in $bin (CUDA, $tag)"; rm -rf "$tmp"; return
+    fi
+    rm -rf "$tmp"
+    fail llamacpp "CUDA build of $tag failed"; return
+  fi
+  tmp=$(mktemp -d) || { fail llamacpp "cannot create a temp directory"; return; }
+  if curl -fsSL -o "$tmp/llama.tgz" "https://github.com/ggml-org/llama.cpp/releases/download/$tag/llama-$tag-bin-ubuntu-x64.tar.gz" \
+    && tar -xzf "$tmp/llama.tgz" -C "$tmp" \
+    && dir=$(find "$tmp" -type f -name llama-server | head -n1) && [ -n "$dir" ] \
+    && cp "$dir" "$bin" && chmod +x "$bin"
+  then ok "llamacpp installed in $bin (CPU, $tag)"; else fail llamacpp "download or extraction of $tag failed"; fi
+  rm -rf "$tmp"
+}
 
 for target in "$@"; do "setup_$target"; done
 exit $status
 EOF
 )
 
-# Check ollama, ComfyUI, vLLM and TensorBoard on a compute node and install what is missing (the software only,
-# no models). With no argument: ollama and ComfyUI; vLLM is a large install, so it is asked for by name.
+# Check ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow on a compute node and install
+# what is missing (the software only, no models). With no argument: ollama and ComfyUI; the others are
+# larger or optional, so they are asked for by name.
 cmd_setup() {
   local time=01:00:00 targets=()
   while [[ $# -gt 0 ]]; do
     case $1 in
       --time)        time=${2:?--time needs a value}; shift 2 ;;
-      comfy|ollama|vllm|tensorboard)  targets+=("$1"); shift ;;
-      *)             die "usage: hpc setup [ollama] [comfy] [vllm] [tensorboard] [--time HH:MM:SS]" ;;
+      comfy|ollama|vllm|tensorboard|openwebui|llamacpp|mlflow)  targets+=("$1"); shift ;;
+      *)             die "usage: hpc setup [ollama] [comfy] [vllm] [tensorboard] [openwebui] [llamacpp] [mlflow] [--time HH:MM:SS]" ;;
     esac
   done
   [[ ${#targets[@]} -gt 0 ]] || targets=(ollama comfy)
@@ -384,7 +454,10 @@ cache_report() {
     [ -d "$e" ] && add "environment $(basename "$e")" "$e" "rm -rf ~/envs/$(basename "$e")  (hpc setup rebuilds it)"
   done
   add "ollama models" "$home/.ollama" "hpc cache rm ollama NAME"
-  add "Hugging Face models" "$home/.cache/huggingface" "hpc cache rm hf ORG/NAME"
+  # Hub entries, shared Xet blob store, and the Xet chunk cache are separate; one folder total misled rm hf.
+  add "Hugging Face hub" "$home/.cache/huggingface/hub" "hpc cache rm hf ORG/NAME"
+  add "Hugging Face blobs" "$home/.cache/huggingface/blobs" "hf cache prune  (unreferenced shared blobs)"
+  add "Hugging Face xet" "$home/.cache/huggingface/xet" "rm -rf ~/.cache/huggingface/xet"
   add "pip cache" "$home/.cache/pip" "hpc cache clean"
   add "uv cache" "$home/.cache/uv" "hpc cache clean"
   add "conda packages" "$home/.conda/pkgs" "hpc cache clean"
@@ -394,7 +467,8 @@ cache_report() {
   rm -f "$tmp"
   if [ -d "$home/comfy/ComfyUI/models" ]; then
     echo; echo "largest ComfyUI model files (hpc cache rm comfy KIND/FILE):"
-    find "$home/comfy/ComfyUI/models" -type f -exec du -k {} + 2>/dev/null | sort -rn | head -n 10 | while read -r kb path; do
+    # Skip placeholder stubs (put_*_here and the like): only files of at least 1 MiB.
+    find "$home/comfy/ComfyUI/models" -type f -size +1M -exec du -k {} + 2>/dev/null | sort -rn | head -n 10 | while read -r kb path; do
       printf '%8s  %s\n' "$(human "$kb")" "${path#"$home/comfy/ComfyUI/models/"}"
     done
   fi
@@ -433,7 +507,22 @@ cache_rm() {
     remove_path "$path" "ComfyUI model $name"
   elif [ "$kind" = hf ]; then
     path="$home/.cache/huggingface/hub/models--${name//\//--}"; [ -d "$path" ] || fail "$name is not in the Hugging Face cache"
-    remove_path "$path" "Hugging Face model $name"
+    # Prefer the Hub CLI: it prunes unreferenced hub/shared blobs. Without it, only the hub folder goes.
+    if command -v hf >/dev/null 2>&1; then
+      if [ "$yes" = yes ]; then
+        hf cache rm "model/$name" --yes && echo "removed Hugging Face model $name (via hf cache rm)" || fail "hf cache rm failed for $name"
+      else
+        hf cache rm "model/$name" --dry-run
+        echo "Dry run, nothing removed: run again with --yes"
+      fi
+    else
+      kb=$(size_kb "$path")
+      if [ "$yes" = yes ]; then
+        rm -rf "$path" && echo "removed Hugging Face model $name ($(human "$kb")); warning: hf not on PATH, shared blobs/xet may remain"
+      else
+        echo "would remove Hugging Face model $name ($(human "$kb")); hf not on PATH, so only the hub folder would be deleted and shared blobs/xet may remain. Dry run, nothing removed: run again with --yes"
+      fi
+    fi
   else
     bin=$home/.local/bin/ollama full=$name port=$((20000 + RANDOM % 20000))
     [[ $full == *:* ]] || full=$full:latest
@@ -715,7 +804,7 @@ cmd_model() {
 # Start a server as a job, wait for its node, expose it on localhost:PORT; Ctrl-C (or a dropped
 # tunnel) cancels the job.
 cmd_serve() {
-  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
+  [[ $# -ge 1 ]] || die "usage: hpc serve CLASS --time HH:MM:SS (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR]|openwebui [URL]|llamacpp MODEL|mlflow [STORE] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [--booked] [--push] [--free] [--cpus N] [--mem SIZE] [-- SBATCH_OPTION...]"
   local class=$1 args=() port='' cmd='' name extra=''
   shift
   while [[ $# -gt 0 ]]; do
@@ -735,16 +824,18 @@ cmd_serve() {
     [[ -z $extra ]] || die "--args does not apply to --cmd: write the whole command"
     name=custom SERVICE=$cmd
   else
-    [[ ${#REST[@]} -ge 1 ]] || die "name one service (jupyter|comfy|ollama|vllm|tensorboard) or use --cmd"
+    [[ ${#REST[@]} -ge 1 ]] || die "name one service (jupyter|comfy|ollama|vllm|tensorboard|openwebui|llamacpp|mlflow) or use --cmd"
     name=${REST[0]}
     case $name in
-      vllm|tensorboard) [[ ${#REST[@]} -le 2 ]] || die "$name takes one argument" ;;
-      *)                [[ ${#REST[@]} -eq 1 ]] || die "$name takes no argument" ;;
+      vllm|llamacpp|tensorboard|openwebui|mlflow) [[ ${#REST[@]} -le 2 ]] || die "$name takes one argument" ;;
+      *)                                          [[ ${#REST[@]} -eq 1 ]] || die "$name takes no argument" ;;
     esac
     service "$name" "${REST[1]:-}"
     if [[ -n $extra ]]; then
-      [[ $name == vllm || $name == tensorboard ]] || die "--args applies to vllm and tensorboard only"
-      SERVICE="$SERVICE $extra"
+      case $name in
+        vllm|tensorboard|openwebui|llamacpp|mlflow) SERVICE="$SERVICE $extra" ;;
+        *) die "--args applies to vllm, tensorboard, openwebui, llamacpp and mlflow only" ;;
+      esac
     fi
     port=${port:-$PORT}
   fi
@@ -965,14 +1056,15 @@ usage: hpc COMMAND [ARGS]
   bench CLASS --time T MODEL [--args OPTIONS] [--bench-args OPTIONS] [options] [-- SBATCH_OPTION...]
                   benchmark vLLM on a GPU class in one job (output tokens per second, time to first token,
                   time per token, at concurrency 1 and 16); --args goes to vllm serve, --bench-args to vllm bench serve
-  serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [options] [-- SBATCH_OPTION...]
+  serve CLASS --time T (jupyter|comfy|ollama|vllm MODEL|tensorboard [LOGDIR]|openwebui [URL]|llamacpp MODEL|mlflow [STORE] | --cmd COMMAND --port PORT) [--port PORT] [--args OPTIONS] [options] [-- SBATCH_OPTION...]
                   run a server as a job, wait until it listens and open it on localhost:PORT; Ctrl-C cancels the job;
-                  --args appends OPTIONS, as typed, to the vllm or tensorboard command;
+                  --args appends OPTIONS, as typed, to vllm, tensorboard, openwebui, llamacpp or mlflow;
                   PORT is the local one; the job picks a free port on the node and in --cmd __PORT__ is replaced by it;
                   the server must listen on 0.0.0.0
-  setup [ollama] [comfy] [vllm] [tensorboard] [--time T]
-                  check ollama (~/.local), ComfyUI (~/comfy), vLLM and TensorBoard (envs in ~/envs) on a cpu
-                  node and install what is missing, software only (default: ollama and comfy; --time default 01:00:00)
+  setup [ollama] [comfy] [vllm] [tensorboard] [openwebui] [llamacpp] [mlflow] [--time T]
+                  check ollama (~/.local), ComfyUI (~/comfy), llama-server (~/.local/bin), and the pip envs in
+                  ~/envs (vLLM, TensorBoard, Open WebUI, MLflow) on a cpu node and install what is missing,
+                  software only (default: ollama and comfy; --time default 01:00:00)
   model comfy [--to KIND] URL... [--to KIND URL...] [--filename NAME] [--time T] | model ollama NAME [--time T]
                   download models on the cluster, in a cpu job: ComfyUI files into ~/comfy/ComfyUI/models/KIND (a
                   --to applies to the URLs after it; a URL before any --to takes the first one) or an Ollama
