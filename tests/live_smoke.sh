@@ -43,7 +43,7 @@ stop_serve() {
 
 cleanup() {
   stop_serve "$serve_pid"
-  rm -f "$log"
+  rm -f "$log" "$log.http" "$log.err"
 }
 trap cleanup EXIT INT TERM
 
@@ -135,13 +135,13 @@ echo "== hpc serve $CLASS --time $VLLM_TIME vllm $MODEL --port $VLLM_PORT"
 if start_serve "ready on port .* open http://localhost:$VLLM_PORT" "$VLLM_PORT" \
     serve "$CLASS" --time "$VLLM_TIME" vllm "$MODEL" --port "$VLLM_PORT"; then
   ok "serve vllm prints ready and the tunnel listens"
-  if body=$(curl -fsS --max-time 30 "http://127.0.0.1:$VLLM_PORT/v1/models" 2>&1); then
-    echo "$body" | grep -qF "$MODEL" \
+  if curl -fsS --max-time 30 "http://127.0.0.1:$VLLM_PORT/v1/models" -o "$log.http" 2>"$log.err"; then
+    grep -qF "$MODEL" "$log.http" \
       && ok "curl /v1/models returns $MODEL" \
-      || { fail "curl /v1/models returns $MODEL"; echo "$body"; }
+      || { fail "curl /v1/models returns $MODEL"; head -c 500 "$log.http"; echo; }
   else
     fail "curl /v1/models"
-    echo "$body"
+    cat "$log.err" 2>/dev/null || true
   fi
   jid=${our_jobs[0]:-}
   stop_serve "$serve_pid"
@@ -165,13 +165,14 @@ echo "== hpc serve cpu --time $TB_TIME tensorboard --port $TB_PORT"
 if start_serve "ready on port .* open http://localhost:$TB_PORT" "$TB_PORT" \
     serve cpu --time "$TB_TIME" tensorboard --port "$TB_PORT"; then
   ok "serve tensorboard prints ready and the tunnel listens"
-  if body=$(curl -fsS --max-time 30 "http://127.0.0.1:$TB_PORT/" 2>&1); then
-    echo "$body" | grep -qi 'tensorboard' \
+  # Write to a file: the TensorBoard HTML embeds large base64 icons and overflows ARG_MAX in a pipe.
+  if curl -fsS --max-time 30 "http://127.0.0.1:$TB_PORT/" -o "$log.http" 2>"$log.err"; then
+    grep -qi 'tensorboard' "$log.http" \
       && ok "curl tensorboard returns its UI" \
-      || { fail "curl tensorboard returns its UI"; echo "$body" | head -n 20; }
+      || { fail "curl tensorboard returns its UI"; head -n 20 "$log.http"; }
   else
     fail "curl tensorboard"
-    echo "$body"
+    cat "$log.err" 2>/dev/null || true
   fi
   jid=${our_jobs[0]:-}
   stop_serve "$serve_pid"

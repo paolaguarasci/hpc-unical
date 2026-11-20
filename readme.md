@@ -24,7 +24,7 @@ Submit Slurm jobs with sensible presets, watch the queue, sync files and read lo
 </div>
 
 > [!NOTE]
-> The offline test suite passes (stubs for `ssh` and `rsync`). The tool has not yet been validated against the live cluster; please report any discrepancy.
+> The offline test suite passes (stubs for `ssh` and `rsync`). Live checks of setup and serve are in `tests/live_smoke.sh` (VPN required); please report any discrepancy.
 
 Official reference: [Getting started with the UniCal HPC cluster](https://hpcgate.unical.it:8001/public/status/getting-started.html).
 
