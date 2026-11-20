@@ -771,11 +771,14 @@ When contacting cluster support, include the job ID, approximate time, the exact
 ## 11. Tests
 
 ```bash
-bash tests/test_hpc.sh                          # the hpc command
+bash tests/test_hpc.sh                          # the hpc command (offline)
 uv run python -m unittest discover -s tests     # the interactive view
+bash tests/live_smoke.sh                        # setup + serve on the real cluster (VPN)
 ```
 
 The Python tests cover the parsers of the interactive view on output captured from the cluster and drive the application with a fake cluster. The shell suite replaces `ssh`, `rsync` and `uv` with stubs and checks the commands that would be sent to the cluster (presets, QoS selection, quoting, argument validation, `.env` loading). It does not exercise the live cluster.
+
+`tests/live_smoke.sh` needs the university VPN. It runs `hpc doctor`, `hpc setup vllm tensorboard`, then `hpc serve` for vLLM (small model, `curl /v1/models`) and TensorBoard, and cancels the jobs it started (TERM on the local `hpc` process). Override `MODEL`, `CLASS`, `VLLM_PORT` or `TB_PORT` in the environment if needed; defaults use local ports 18000 and 16006 so a serve already open on 8000 is left alone.
 
 ## Public page
 
