@@ -29,7 +29,7 @@ _hpc() {
     'cache:space used in the home; clean caches, remove a model'
     'env:sync a uv environment on the cluster into ~/envs'
     'notify:notify when a job ends'
-    'setup:check and install ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow'
+    'setup:check and install ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp, MLflow and Langflow'
     'model:download a model on the cluster'
     'download:copy ComfyUI results to this machine'
     'wait:block until a job ends'
@@ -44,7 +44,7 @@ _hpc() {
   fi
   case $words[2] in
     run|sweep|submit|shell|serve|bench) (( CURRENT == 3 )) && _values 'class' tiny small medium large cpu || _files ;;
-    setup) _values 'component' ollama comfy vllm tensorboard openwebui llamacpp mlflow ;;
+    setup) _values 'component' ollama comfy vllm tensorboard openwebui llamacpp mlflow langflow ;;
     cache) (( CURRENT == 3 )) && _values 'action' report clean rm || { [[ $words[3] == rm && CURRENT -eq 4 ]] && _values 'kind' comfy ollama hf; } ;;
     model) (( CURRENT == 3 )) && _values 'kind' comfy ollama list template || { [[ $words[3] == list ]] && _values 'target' comfy ollama; } ;;
     logs|l|cancel|c|wait|w|info|tunnel) (( CURRENT == 3 )) && _hpc_jobs ;;

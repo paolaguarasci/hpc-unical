@@ -155,8 +155,8 @@ expect_logged "setup --time overrides the default" "--time=00:20:00"
 run setup vllm tensorboard
 expect_logged "setup takes vllm and tensorboard" "hpc-setup vllm tensorboard"
 expect_logged "setup installs vllm with pip in its own environment" "pip\" install -q \"\$pkg\""
-run setup openwebui llamacpp mlflow
-expect_logged "setup takes openwebui, llamacpp and mlflow" "hpc-setup openwebui llamacpp mlflow"
+run setup openwebui llamacpp mlflow langflow
+expect_logged "setup takes openwebui, llamacpp, mlflow and langflow" "hpc-setup openwebui llamacpp mlflow langflow"
 expect_error "setup rejects an unknown component" setup nginx
 expect_error "setup rejects an unknown option" setup --gpu
 STUB_EXIT=1 expect_error "setup fails when the cluster reports a failure" setup ollama
@@ -177,13 +177,13 @@ mkdir -p "$WORK/h3/envs/vllm/bin"; printf '#!/bin/sh\n' > "$WORK/h3/envs/vllm/bi
 out=$(HOME="$WORK/h3" PATH="$WORK/nonet:$PATH" bash -c "$script" x vllm 2>&1); code=$?
 [[ $code -eq 0 && $out == "ok   - vllm is installed"* ]] && ok "setup script leaves an installed vllm alone" || { fail "setup script leaves an installed vllm alone"; echo "$out"; }
 
-out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp 2>&1); code=$?
-[[ $code -ne 0 && $out == *"FAIL - openwebui: this node cannot reach pypi.org"* && $out == *"FAIL - mlflow: this node cannot reach pypi.org"* && $out == *"FAIL - llamacpp: this node cannot reach github.com"* ]] && ok "setup script fails explicitly for openwebui, mlflow and llamacpp without network" || { fail "setup script fails explicitly for openwebui, mlflow and llamacpp without network"; echo "$out"; }
-mkdir -p "$WORK/h4/envs/openwebui/bin" "$WORK/h4/envs/mlflow/bin" "$WORK/h4/.local/bin"
-printf '#!/bin/sh\n' > "$WORK/h4/envs/openwebui/bin/open-webui"; printf '#!/bin/sh\n' > "$WORK/h4/envs/mlflow/bin/mlflow"; printf '#!/bin/sh\n' > "$WORK/h4/.local/bin/llama-server"
-chmod +x "$WORK/h4/envs/openwebui/bin/open-webui" "$WORK/h4/envs/mlflow/bin/mlflow" "$WORK/h4/.local/bin/llama-server"
-out=$(HOME="$WORK/h4" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp 2>&1); code=$?
-[[ $code -eq 0 && $out == *"ok   - openwebui is installed"* && $out == *"ok   - mlflow is installed"* && $out == *"ok   - llamacpp is installed"* ]] && ok "setup script leaves installed openwebui, mlflow and llamacpp alone" || { fail "setup script leaves installed openwebui, mlflow and llamacpp alone"; echo "$out"; }
+out=$(HOME="$WORK/fakehome" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp langflow 2>&1); code=$?
+[[ $code -ne 0 && $out == *"FAIL - openwebui: this node cannot reach pypi.org"* && $out == *"FAIL - mlflow: this node cannot reach pypi.org"* && $out == *"FAIL - langflow: this node cannot reach pypi.org"* && $out == *"FAIL - llamacpp: this node cannot reach github.com"* ]] && ok "setup script fails explicitly for openwebui, mlflow, langflow and llamacpp without network" || { fail "setup script fails explicitly for openwebui, mlflow, langflow and llamacpp without network"; echo "$out"; }
+mkdir -p "$WORK/h4/envs/openwebui/bin" "$WORK/h4/envs/mlflow/bin" "$WORK/h4/envs/langflow/bin" "$WORK/h4/.local/bin"
+printf '#!/bin/sh\n' > "$WORK/h4/envs/openwebui/bin/open-webui"; printf '#!/bin/sh\n' > "$WORK/h4/envs/mlflow/bin/mlflow"; printf '#!/bin/sh\n' > "$WORK/h4/envs/langflow/bin/langflow"; printf '#!/bin/sh\n' > "$WORK/h4/.local/bin/llama-server"
+chmod +x "$WORK/h4/envs/openwebui/bin/open-webui" "$WORK/h4/envs/mlflow/bin/mlflow" "$WORK/h4/envs/langflow/bin/langflow" "$WORK/h4/.local/bin/llama-server"
+out=$(HOME="$WORK/h4" PATH="$WORK/nonet:$PATH" bash -c "$script" x openwebui mlflow llamacpp langflow 2>&1); code=$?
+[[ $code -eq 0 && $out == *"ok   - openwebui is installed"* && $out == *"ok   - mlflow is installed"* && $out == *"ok   - langflow is installed"* && $out == *"ok   - llamacpp is installed"* ]] && ok "setup script leaves installed openwebui, mlflow, langflow and llamacpp alone" || { fail "setup script leaves installed openwebui, mlflow, langflow and llamacpp alone"; echo "$out"; }
 
 # ComfyUI present but the environment without PyTorch (a past install that went to ~/.local): the script
 # must refuse, not report ok and not reinstall over it.
@@ -668,6 +668,12 @@ expect_logged "serve mlflow stores under the home by default" "sqlite:///\\\$HOM
 expect_logged "serve mlflow opens the tunnel from local port 5000" "-L 5000:ainode02:31337"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 mlflow /tmp/mlruns
 expect_logged "serve mlflow takes a store directory" "sqlite:////tmp/mlruns/mlflow.db"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve cpu --time 01:00:00 langflow
+expect_logged "serve langflow runs in the environment made by setup" "envs/langflow/bin"
+expect_logged "serve langflow binds all interfaces" "langflow\\ run\\ --host\\ 0.0.0.0"
+expect_logged "serve langflow opens the tunnel from local port 7860" "-L 7860:ainode02:31337"
+STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" LANGFLOW_SUPERUSER_PASSWORD='s3cret' run serve cpu --time 01:00:00 langflow
+expect_logged "serve langflow forwards LANGFLOW_SUPERUSER_PASSWORD into the job" "LANGFLOW_SUPERUSER_PASSWORD=s3cret"
 STUB_SBATCH=77 STUB_OUT="RUNNING ainode02" run serve medium --time 01:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"
 expect_logged "serve --args appends the options to the vllm command" "--port\\ \\\$HPC_RPORT\\ --reasoning-parser\\ qwen3\\ --max-model-len\\ 8192"
 expect_error "serve --args is refused for a service that does not take it" serve small --time 01:00:00 jupyter --args "--x"

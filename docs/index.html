@@ -1,25 +1,32 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>hpc — one command for the UniCal HPC cluster</title>
-  <meta name="description" content="Unofficial command-line helpers for the UniCal HPC cluster: submit Slurm jobs with presets, watch the queue, sync files and read logs.">
+  <meta name="description"
+    content="Unofficial command-line helpers for the UniCal HPC cluster: submit Slurm jobs with presets, watch the queue, sync files and read logs.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
+
 <body class="bg-ink bg-atmos font-body text-fg antialiased">
 
   <header class="mx-auto flex max-w-6xl items-center justify-between px-4 py-6 sm:px-6">
-    <a href="#top" class="font-mono text-sm font-medium tracking-tight text-fg">hpc<span class="text-accent">_</span></a>
+    <a href="#top" class="font-mono text-sm font-medium tracking-tight text-fg">hpc<span
+        class="text-accent">_</span></a>
     <nav class="flex items-center gap-6 text-sm text-mute">
       <a class="hover:text-fg" href="#quick-start">Quick start</a>
       <a class="hover:text-fg" href="#commands">Commands</a>
       <a class="hover:text-fg" href="#serve">Serve</a>
       <a class="hover:text-fg" href="#classes">Classes</a>
-      <a class="rounded-full border border-line px-4 py-1.5 text-fg hover:border-accent hover:text-accent" href="https://github.com/paolaguarasci/hpc-unical">GitHub</a>
+      <a class="rounded-full border border-line px-4 py-1.5 text-fg hover:border-accent hover:text-accent"
+        href="https://github.com/paolaguarasci/hpc-unical">GitHub</a>
     </nav>
   </header>
 
@@ -28,21 +35,29 @@
     <!-- Hero -->
     <section class="mx-auto grid max-w-6xl gap-12 px-4 pb-20 pt-12 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:pt-20">
       <div>
-        <h1 class="reveal d2 font-display text-7xl font-extrabold leading-[0.9] tracking-tight sm:text-8xl lg:text-[9rem]">hpc</h1>
+        <h1
+          class="reveal d2 font-display text-7xl font-extrabold leading-[0.9] tracking-tight sm:text-8xl lg:text-[9rem]">
+          hpc</h1>
         <p class="reveal d3 mt-6 max-w-xl text-2xl font-extralight leading-snug text-fg/90 sm:text-3xl">
           One command for the <span class="font-extrabold text-accent">UniCal HPC cluster</span>.
         </p>
         <p class="reveal d4 mt-5 max-w-lg text-base text-mute">
-          Submit Slurm jobs with sensible presets, watch the queue, sync files and read logs, straight from your own terminal.
+          Submit Slurm jobs with sensible presets, watch the queue, sync files and read logs, straight from your own
+          terminal.
         </p>
         <div class="reveal d5 mt-9 flex flex-wrap gap-3">
-          <a href="#quick-start" class="rounded-full bg-accent px-6 py-3 text-sm font-extrabold text-ink hover:brightness-110">Get started</a>
-          <a href="https://github.com/paolaguarasci/hpc-unical" class="rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent">View on GitHub</a>
+          <a href="#quick-start"
+            class="rounded-full bg-accent px-6 py-3 text-sm font-extrabold text-ink hover:brightness-110">Get
+            started</a>
+          <a href="https://github.com/paolaguarasci/hpc-unical"
+            class="rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent">View
+            on GitHub</a>
         </div>
         <p class="reveal d5 mt-6 font-mono text-xs text-mute">Unofficial · open source · MIT</p>
       </div>
 
-      <div class="reveal d4 self-center overflow-hidden rounded-2xl border border-line bg-panel/80 shadow-2xl shadow-black/40 backdrop-blur">
+      <div
+        class="reveal d4 self-center overflow-hidden rounded-2xl border border-line bg-panel/80 shadow-2xl shadow-black/40 backdrop-blur">
         <div class="flex items-center gap-2 border-b border-line px-4 py-3">
           <span class="h-3 w-3 rounded-full bg-line"></span>
           <span class="h-3 w-3 rounded-full bg-line"></span>
@@ -67,8 +82,10 @@
       <div class="rounded-2xl border border-accent/40 bg-accent/5 p-6 sm:p-8">
         <h2 class="font-display text-3xl font-extrabold sm:text-4xl">The university VPN is required.</h2>
         <p class="mt-3 max-w-3xl text-mute">
-          The cluster head node is reachable only through the university OpenVPN, which must be active every time you run <code class="font-mono text-fg">hpc</code>.
-          The OpenVPN configuration is not distributed with this tool: <strong class="font-semibold text-fg">request it through UniTicket</strong>.
+          The cluster head node is reachable only through the university OpenVPN, which must be active every time you
+          run <code class="font-mono text-fg">hpc</code>.
+          The OpenVPN configuration is not distributed with this tool: <strong class="font-semibold text-fg">request it
+            through UniTicket</strong>.
         </p>
       </div>
     </section>
@@ -83,14 +100,17 @@
           <p class="font-display text-6xl font-extrabold text-accent">1</p>
           <h3 class="mt-3 text-xl font-extrabold">Upload your SSH key</h3>
           <p class="mt-2 text-sm text-mute">Once, with the VPN on. The password is asked only this time.</p>
-          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">ssh-keygen -t ed25519
+          <pre
+            class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">ssh-keygen -t ed25519
 ssh-copy-id YOUR_LOGIN@hpcgate.unical.it</pre>
         </article>
         <article class="rounded-2xl border border-line bg-panel/70 p-6">
           <p class="font-display text-6xl font-extrabold text-accent">2</p>
           <h3 class="mt-3 text-xl font-extrabold">Install the command</h3>
-          <p class="mt-2 text-sm text-mute">Clone the repository and link <code class="font-mono text-fg">hpc</code> on your PATH.</p>
-          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">git clone https://github.com/paolaguarasci/hpc-unical
+          <p class="mt-2 text-sm text-mute">Clone the repository and link <code class="font-mono text-fg">hpc</code> on
+            your PATH.</p>
+          <pre
+            class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">git clone https://github.com/paolaguarasci/hpc-unical
 cd hpc-unical
 ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
         </article>
@@ -98,14 +118,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
           <p class="font-display text-6xl font-extrabold text-accent">3</p>
           <h3 class="mt-3 text-xl font-extrabold">Set your login</h3>
           <p class="mt-2 text-sm text-mute">Kept in a git-ignored <code class="font-mono text-fg">.env</code> file.</p>
-          <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">cp .env.example .env
+          <pre
+            class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-3 font-mono text-xs leading-6 text-fg">cp .env.example .env
 # edit: HPC_USER=your_cluster_login</pre>
         </article>
       </div>
 
       <div class="mt-5 rounded-2xl border border-line bg-panel/70 p-6">
         <h3 class="text-xl font-extrabold">Run the demo</h3>
-        <pre class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-4 font-mono text-xs leading-7 text-fg sm:text-sm"><span class="text-accent">$</span> hpc qos                                                 <span class="text-mute"># which QoS may you use?</span>
+        <pre
+          class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg bg-ink/70 p-4 font-mono text-xs leading-7 text-fg sm:text-sm"><span class="text-accent">$</span> hpc qos                                                 <span class="text-mute"># which QoS may you use?</span>
 <span class="text-accent">$</span> hpc push                                                <span class="text-mute"># copy the project to the cluster</span>
 <span class="text-accent">$</span> hpc submit tiny --time 00:05:00 templates/demo.sbatch   <span class="text-mute"># submit the smoke test</span>
 <span class="text-accent">$</span> hpc queue                                               <span class="text-mute"># PENDING → RUNNING → COMPLETED</span>
@@ -119,36 +141,153 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
       <div class="mt-10 overflow-x-auto rounded-2xl border border-line">
         <table class="w-full min-w-[34rem] text-left text-sm">
           <thead class="bg-panel text-xs uppercase tracking-widest text-mute">
-            <tr><th class="px-5 py-3 font-semibold">Command</th><th class="px-5 py-3 font-semibold">What it does</th></tr>
+            <tr>
+              <th class="px-5 py-3 font-semibold">Command</th>
+              <th class="px-5 py-3 font-semibold">What it does</th>
+            </tr>
           </thead>
           <tbody class="divide-y divide-line">
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc submit CLASS --time T SCRIPT</td><td class="px-5 py-4 text-fg/90">Submit a batch script with the preset of the class; <code class="font-mono">--booked</code>, <code class="font-mono">--requeue</code>, <code class="font-mono">--push</code>, <code class="font-mono">--free</code>, <code class="font-mono">--cpus</code>, <code class="font-mono">--mem</code> are optional; options after <code class="font-mono">--</code> go to <code class="font-mono">sbatch</code> unchanged (e.g. <code class="font-mono">--array</code>)</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc run CLASS --time T [--pull PATH]… SCRIPT</td><td class="px-5 py-4 text-fg/90">Push, submit, wait for the job and pull each <code class="font-mono">--pull</code> path if it completed</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc sweep CLASS --time T --params FILE SCRIPT</td><td class="px-5 py-4 text-fg/90">Job array with one task per line of a parameter file; <code class="font-mono">--parallel N</code> caps the tasks running at once</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc status</td><td class="px-5 py-4 text-fg/90">Running and pending jobs and the last job, in one line</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc queue [-w [SECONDS]]</td><td class="px-5 py-4 text-fg/90">Your pending and running jobs, plus the last 24 hours of history; <code class="font-mono">-w</code> refreshes the view live</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc top</td><td class="px-5 py-4 text-fg/90">Interactive view of the cluster and of your jobs: usage bars, live output, history; requires <code class="font-mono">uv</code></td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc qos</td><td class="px-5 py-4 text-fg/90">QoS associations granted to your account</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc push</td><td class="px-5 py-4 text-fg/90">Sync the current directory to the cluster; honours <code class="font-mono">.gitignore</code> and <code class="font-mono">.hpcignore</code>, never deletes</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc pull PATH…</td><td class="px-5 py-4 text-fg/90">Fetch the named files from the cluster project directory</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc logs [ID] [-f]</td><td class="px-5 py-4 text-fg/90">Show or follow a job's output</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc cancel ID</td><td class="px-5 py-4 text-fg/90">Cancel a job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc shell CLASS --time T</td><td class="px-5 py-4 text-fg/90">Interactive shell on a compute node, with the preset of the class</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc tunnel ID PORT</td><td class="px-5 py-4 text-fg/90">Forward a local port to a server run by a job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc serve CLASS --time T SERVICE</td><td class="px-5 py-4 text-fg/90">Run <code class="font-mono">jupyter</code>, <code class="font-mono">comfy</code>, <code class="font-mono">ollama</code>, <code class="font-mono">vllm MODEL</code>, <code class="font-mono">tensorboard</code>, <code class="font-mono">openwebui</code>, <code class="font-mono">llamacpp MODEL</code> or <code class="font-mono">mlflow</code> (or your own server with <code class="font-mono">--cmd</code>) as a job and open it on <code class="font-mono">localhost</code>; Ctrl-C cancels the job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc bench CLASS --time T MODEL</td><td class="px-5 py-4 text-fg/90">Benchmark vLLM on a GPU class in one job: output tokens per second, time to first token and time per token</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc cache [clean|rm KIND NAME]</td><td class="px-5 py-4 text-fg/90">Space used in the cluster home by location; remove the caches or one model (a dry run unless <code class="font-mono">--yes</code>)</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc env [NAME]</td><td class="px-5 py-4 text-fg/90">Sync a uv environment on the cluster into <code class="font-mono">~/envs/NAME</code> from local <code class="font-mono">pyproject.toml</code> + <code class="font-mono">uv.lock</code> (<code class="font-mono">--frozen</code>); pushes first; installs uv if missing</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc notify ID [--mail [ADDRESS]]</td><td class="px-5 py-4 text-fg/90">Notify when job <code class="font-mono">ID</code> ends, also for a job already started: a macOS notification, and with <code class="font-mono">--mail</code> a Slurm mail</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc setup [ollama] [comfy] [vllm] [tensorboard] [openwebui] [llamacpp] [mlflow]</td><td class="px-5 py-4 text-fg/90">Check ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp and MLflow on a compute node and install what is missing, software only</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc model comfy URL --to KIND</td><td class="px-5 py-4 text-fg/90">Download ComfyUI models on the cluster, in one compute job (several URLs, a <code class="font-mono">--to</code> folder for those that follow) (<code class="font-mono">hpc model ollama NAME</code> for an Ollama model); never overwrites, refuses when space is short</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc model list [comfy|ollama]</td><td class="px-5 py-4 text-fg/90">List the downloadable ComfyUI models (about 500) and the Ollama models installed, marking those already present; <code class="font-mono">--type</code>, <code class="font-mono">--filter</code> and <code class="font-mono">--urls</code> are optional</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc model template NAME</td><td class="px-5 py-4 text-fg/90">Download all the models that a ComfyUI template declares, with no URL to copy; <code class="font-mono">hpc model template list</code> shows which are present, <code class="font-mono">hpc model comfy --workflow FILE</code> does the same for your own workflow file</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc download comfy [PATH…]</td><td class="px-5 py-4 text-fg/90">Copy the ComfyUI results (videos, images) from the cluster to this machine; <code class="font-mono">--latest N</code> takes the newest files, <code class="font-mono">--to DIR</code> chooses the folder; never deletes</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc wait ID</td><td class="px-5 py-4 text-fg/90">Block until a job ends; succeed only if it completed</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc doctor</td><td class="px-5 py-4 text-fg/90">Check tools, VPN and SSH access, Slurm and the project directory</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc info ID</td><td class="px-5 py-4 text-fg/90">CPU and memory efficiency of a finished job</td></tr>
-            <tr><td class="px-5 py-4 font-mono text-accent">hpc free</td><td class="px-5 py-4 text-fg/90">Classes with a free GPU slice right now</td></tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc submit CLASS --time T SCRIPT</td>
+              <td class="px-5 py-4 text-fg/90">Submit a batch script with the preset of the class; <code
+                  class="font-mono">--booked</code>, <code class="font-mono">--requeue</code>, <code
+                  class="font-mono">--push</code>, <code class="font-mono">--free</code>, <code
+                  class="font-mono">--cpus</code>, <code class="font-mono">--mem</code> are optional; options after
+                <code class="font-mono">--</code> go to <code class="font-mono">sbatch</code> unchanged (e.g. <code
+                  class="font-mono">--array</code>)</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc run CLASS --time T [--pull PATH]… SCRIPT</td>
+              <td class="px-5 py-4 text-fg/90">Push, submit, wait for the job and pull each <code
+                  class="font-mono">--pull</code> path if it completed</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc sweep CLASS --time T --params FILE SCRIPT</td>
+              <td class="px-5 py-4 text-fg/90">Job array with one task per line of a parameter file; <code
+                  class="font-mono">--parallel N</code> caps the tasks running at once</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc status</td>
+              <td class="px-5 py-4 text-fg/90">Running and pending jobs and the last job, in one line</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc queue [-w [SECONDS]]</td>
+              <td class="px-5 py-4 text-fg/90">Your pending and running jobs, plus the last 24 hours of history; <code
+                  class="font-mono">-w</code> refreshes the view live</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc top</td>
+              <td class="px-5 py-4 text-fg/90">Interactive view of the cluster and of your jobs: usage bars, live
+                output, history; requires <code class="font-mono">uv</code></td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc qos</td>
+              <td class="px-5 py-4 text-fg/90">QoS associations granted to your account</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc push</td>
+              <td class="px-5 py-4 text-fg/90">Sync the current directory to the cluster; honours <code
+                  class="font-mono">.gitignore</code> and <code class="font-mono">.hpcignore</code>, never deletes</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc pull PATH…</td>
+              <td class="px-5 py-4 text-fg/90">Fetch the named files from the cluster project directory</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc logs [ID] [-f]</td>
+              <td class="px-5 py-4 text-fg/90">Show or follow a job's output</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc cancel ID</td>
+              <td class="px-5 py-4 text-fg/90">Cancel a job</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc shell CLASS --time T</td>
+              <td class="px-5 py-4 text-fg/90">Interactive shell on a compute node, with the preset of the class</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc tunnel ID PORT</td>
+              <td class="px-5 py-4 text-fg/90">Forward a local port to a server run by a job</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc serve CLASS --time T SERVICE</td>
+              <td class="px-5 py-4 text-fg/90">Run <code class="font-mono">jupyter</code>, <code
+                  class="font-mono">comfy</code>, <code class="font-mono">ollama</code>, <code
+                  class="font-mono">vllm MODEL</code>, <code class="font-mono">tensorboard</code>, <code
+                  class="font-mono">openwebui</code>, <code class="font-mono">llamacpp MODEL</code>, <code
+                  class="font-mono">mlflow</code> or <code class="font-mono">langflow</code> (or your own server with
+                <code class="font-mono">--cmd</code>) as a job and open it on <code class="font-mono">localhost</code>;
+                Ctrl-C cancels the job</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc bench CLASS --time T MODEL</td>
+              <td class="px-5 py-4 text-fg/90">Benchmark vLLM on a GPU class in one job: output tokens per second, time
+                to first token and time per token</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc cache [clean|rm KIND NAME]</td>
+              <td class="px-5 py-4 text-fg/90">Space used in the cluster home by location; remove the caches or one
+                model (a dry run unless <code class="font-mono">--yes</code>)</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc env [NAME]</td>
+              <td class="px-5 py-4 text-fg/90">Sync a uv environment on the cluster into <code
+                  class="font-mono">~/envs/NAME</code> from local <code class="font-mono">pyproject.toml</code> + <code
+                  class="font-mono">uv.lock</code> (<code class="font-mono">--frozen</code>); pushes first; installs uv
+                if missing</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc notify ID [--mail [ADDRESS]]</td>
+              <td class="px-5 py-4 text-fg/90">Notify when job <code class="font-mono">ID</code> ends, also for a job
+                already started: a macOS notification, and with <code class="font-mono">--mail</code> a Slurm mail</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc setup [ollama] [comfy] [vllm] [tensorboard] [openwebui]
+                [llamacpp] [mlflow] [langflow]</td>
+              <td class="px-5 py-4 text-fg/90">Check ollama, ComfyUI, vLLM, TensorBoard, Open WebUI, llama.cpp, MLflow
+                and Langflow on a compute node and install what is missing, software only</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc model comfy URL --to KIND</td>
+              <td class="px-5 py-4 text-fg/90">Download ComfyUI models on the cluster, in one compute job (several URLs,
+                a <code class="font-mono">--to</code> folder for those that follow) (<code
+                  class="font-mono">hpc model ollama NAME</code> for an Ollama model); never overwrites, refuses when
+                space is short</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc model list [comfy|ollama]</td>
+              <td class="px-5 py-4 text-fg/90">List the downloadable ComfyUI models (about 500) and the Ollama models
+                installed, marking those already present; <code class="font-mono">--type</code>, <code
+                  class="font-mono">--filter</code> and <code class="font-mono">--urls</code> are optional</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc model template NAME</td>
+              <td class="px-5 py-4 text-fg/90">Download all the models that a ComfyUI template declares, with no URL to
+                copy; <code class="font-mono">hpc model template list</code> shows which are present, <code
+                  class="font-mono">hpc model comfy --workflow FILE</code> does the same for your own workflow file</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc download comfy [PATH…]</td>
+              <td class="px-5 py-4 text-fg/90">Copy the ComfyUI results (videos, images) from the cluster to this
+                machine; <code class="font-mono">--latest N</code> takes the newest files, <code
+                  class="font-mono">--to DIR</code> chooses the folder; never deletes</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc wait ID</td>
+              <td class="px-5 py-4 text-fg/90">Block until a job ends; succeed only if it completed</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc doctor</td>
+              <td class="px-5 py-4 text-fg/90">Check tools, VPN and SSH access, Slurm and the project directory</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc info ID</td>
+              <td class="px-5 py-4 text-fg/90">CPU and memory efficiency of a finished job</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-mono text-accent">hpc free</td>
+              <td class="px-5 py-4 text-fg/90">Classes with a free GPU slice right now</td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -161,8 +300,12 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
         Start a service as a Slurm job; it opens on <code class="font-mono text-lg font-medium">localhost</code>.
       </p>
       <p class="mt-4 max-w-3xl text-sm text-mute">
-        VPN on. Install once with <code class="font-mono text-fg">hpc setup</code> (Jupyter needs <code class="font-mono text-fg">jupyter</code> in your login environment).
-        Ctrl-C closes the tunnel and cancels the job. Replace <code class="font-mono text-fg">MODEL</code> and paths with yours.
+        VPN on. Install once with <code class="font-mono text-fg">hpc setup</code> (Jupyter needs <code
+          class="font-mono text-fg">jupyter</code> in your login environment).
+        Ctrl-C closes the tunnel and cancels the job. Replace <code class="font-mono text-fg">MODEL</code> and paths
+        with yours.
+        Cards marked <span class="font-mono text-[10px] uppercase tracking-wider text-mute">upcoming</span> still use
+        <code class="font-mono text-fg">--cmd</code>; a named preset is planned.
       </p>
 
       <div class="mt-12 grid gap-5 sm:grid-cols-2">
@@ -177,12 +320,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">JupyterLab</h3>
                 <span class="font-mono text-xs text-accent">:8888</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Notebooks on a GPU slice. Token in <code class="font-mono text-fg">hpc logs ID</code>.</p>
+              <p class="mt-1 text-sm text-mute">Notebooks on a GPU slice. Token in <code
+                  class="font-mono text-fg">hpc logs ID</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve small --time 04:00:00 jupyter">Copy command</button>
           </div>
         </article>
 
@@ -196,12 +343,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">ComfyUI</h3>
                 <span class="font-mono text-xs text-accent">:8188</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Image and video workflows. Needs <code class="font-mono text-fg">hpc setup comfy</code>.</p>
+              <p class="mt-1 text-sm text-mute">Image and video workflows. Needs <code
+                  class="font-mono text-fg">hpc setup comfy</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 comfy</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 comfy">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 comfy</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve small --time 04:00:00 comfy">Copy command</button>
           </div>
         </article>
 
@@ -215,12 +366,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">Ollama</h3>
                 <span class="font-mono text-xs text-accent">:11434</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Local LLM API. Pull models with <code class="font-mono text-fg">hpc model ollama NAME</code>.</p>
+              <p class="mt-1 text-sm text-mute">Local LLM API. Pull models with <code
+                  class="font-mono text-fg">hpc model ollama NAME</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve tiny --time 04:00:00 ollama</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve tiny --time 04:00:00 ollama">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve tiny --time 04:00:00 ollama</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve tiny --time 04:00:00 ollama">Copy command</button>
           </div>
         </article>
 
@@ -234,12 +389,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">vLLM</h3>
                 <span class="font-mono text-xs text-accent">:8000/v1</span>
               </div>
-              <p class="mt-1 text-sm text-mute">OpenAI-compatible API. Needs <code class="font-mono text-fg">hpc setup vllm</code>.</p>
+              <p class="mt-1 text-sm text-mute">OpenAI-compatible API. Needs <code
+                  class="font-mono text-fg">hpc setup vllm</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve medium --time 04:00:00 vllm Qwen/Qwen3-8B">Copy command</button>
           </div>
         </article>
 
@@ -257,8 +416,11 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 tensorboard runs</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 tensorboard runs">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 tensorboard runs</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 tensorboard runs">Copy command</button>
           </div>
         </article>
 
@@ -276,8 +438,11 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 openwebui">Copy command</button>
           </div>
         </article>
 
@@ -291,12 +456,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">llama.cpp</h3>
                 <span class="font-mono text-xs text-accent">:8080</span>
               </div>
-              <p class="mt-1 text-sm text-mute">GGUF server. <code class="font-mono text-fg">MODEL</code> is a path on the cluster.</p>
+              <p class="mt-1 text-sm text-mute">GGUF server. <code class="font-mono text-fg">MODEL</code> is a path on
+                the cluster.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve medium --time 02:00:00 llamacpp ~/models/model.gguf">Copy command</button>
           </div>
         </article>
 
@@ -310,12 +479,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">MLflow</h3>
                 <span class="font-mono text-xs text-accent">:5000</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Experiment tracking. Store defaults to <code class="font-mono text-fg">~/mlflow</code>.</p>
+              <p class="mt-1 text-sm text-mute">Experiment tracking. Store defaults to <code
+                  class="font-mono text-fg">~/mlflow</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 mlflow</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 mlflow">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 mlflow</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 02:00:00 mlflow">Copy command</button>
           </div>
         </article>
 
@@ -326,15 +499,22 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </div>
             <div class="min-w-0 flex-1">
               <div class="flex items-baseline justify-between gap-3">
-                <h3 class="text-lg font-extrabold">n8n</h3>
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">n8n <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
                 <span class="font-mono text-xs text-accent">:5678</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Workflow editor via <code class="font-mono text-fg">--cmd</code>. Needs <code class="font-mono text-fg">n8n</code> on the node; data in <code class="font-mono text-fg">~/.n8n</code>.</p>
+              <p class="mt-1 text-sm text-mute">Workflow editor via <code class="font-mono text-fg">--cmd</code>. Needs
+                <code class="font-mono text-fg">n8n</code> on the node; data in <code
+                  class="font-mono text-fg">~/.n8n</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 --cmd 'N8N_HOST=0.0.0.0 N8N_PORT=__PORT__ N8N_LISTEN_ADDRESS=0.0.0.0 n8n' --port 5678">Copy
+              command</button>
           </div>
         </article>
 
@@ -348,12 +528,17 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">Gradio</h3>
                 <span class="font-mono text-xs text-accent">:7860</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Your <code class="font-mono text-fg">app.py</code> via Gradio env vars. Sync with <code class="font-mono text-fg">--push</code>.</p>
+              <p class="mt-1 text-sm text-mute">Your <code class="font-mono text-fg">app.py</code> via Gradio env vars.
+                Sync with <code class="font-mono text-fg">--push</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'GRADIO_SERVER_NAME=0.0.0.0 GRADIO_SERVER_PORT=__PORT__ python3 app.py' --port 7860">Copy
+              command</button>
           </div>
         </article>
 
@@ -371,8 +556,12 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'streamlit run app.py --server.address 0.0.0.0 --server.port __PORT__' --port 8501">Copy
+              command</button>
           </div>
         </article>
 
@@ -386,12 +575,189 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">FastAPI</h3>
                 <span class="font-mono text-xs text-accent">:8000</span>
               </div>
-              <p class="mt-1 text-sm text-mute">Replace <code class="font-mono text-fg">main:app</code> with your module path.</p>
+              <p class="mt-1 text-sm text-mute">Replace <code class="font-mono text-fg">main:app</code> with your module
+                path.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 02:00:00 --push --cmd 'uvicorn main:app --host 0.0.0.0 --port __PORT__' --port 8000">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/dify.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">Dify <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:3000</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">LLM app platform. Needs the API/DB stack already up under <code
+                  class="font-mono text-fg">~/dify</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'PORT=__PORT__ HOSTNAME=0.0.0.0 pnpm -C ~/dify/web start' --port 3000</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 --cmd 'PORT=__PORT__ HOSTNAME=0.0.0.0 pnpm -C ~/dify/web start' --port 3000">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/langflow.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="text-lg font-extrabold">Langflow</h3>
+                <span class="font-mono text-xs text-accent">:7860</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Visual LLM/RAG flows. Needs <code
+                  class="font-mono text-fg">hpc setup langflow</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 langflow</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 langflow">Copy command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/lobehub.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">LobeHub <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:3210</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Agent chat UI. Clone and build under <code
+                  class="font-mono text-fg">~/lobehub</code> first.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'HOSTNAME=0.0.0.0 PORT=__PORT__ pnpm --dir ~/lobehub start' --port 3210</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 --cmd 'HOSTNAME=0.0.0.0 PORT=__PORT__ pnpm --dir ~/lobehub start' --port 3210">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/anythingllm.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">AnythingLLM <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:3001</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Document RAG chat. Point at ollama/vLLM as the backend.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'SERVER_PORT=__PORT__ yarn --cwd ~/anything-llm/server start' --port 3001</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 --cmd 'SERVER_PORT=__PORT__ yarn --cwd ~/anything-llm/server start' --port 3001">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/localai.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">LocalAI <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:8080</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">OpenAI-compatible multi-model server. Install the <code
+                  class="font-mono text-fg">local-ai</code> binary once.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 04:00:00 --cmd 'ADDRESS=0.0.0.0:__PORT__ local-ai' --port 8080</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve medium --time 04:00:00 --cmd 'ADDRESS=0.0.0.0:__PORT__ local-ai' --port 8080">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/librechat.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">LibreChat <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:3080</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Multi-provider chat. Needs MongoDB and a clone under <code
+                  class="font-mono text-fg">~/LibreChat</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 --cmd 'HOST=0.0.0.0 PORT=__PORT__ npm --prefix ~/LibreChat run backend' --port 3080</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 --cmd 'HOST=0.0.0.0 PORT=__PORT__ npm --prefix ~/LibreChat run backend' --port 3080">Copy
+              command</button>
+          </div>
+        </article>
+
+        <article class="flex flex-col overflow-hidden rounded-2xl border border-line bg-panel/70">
+          <div class="flex items-center gap-4 px-5 pt-5">
+            <div class="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-ink/80 ring-1 ring-line">
+              <img src="assets/serve/a1111.svg" alt="" width="32" height="32" class="h-8 w-8">
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-baseline justify-between gap-3">
+                <h3 class="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-lg font-extrabold">A1111 WebUI <span
+                    class="font-mono text-[10px] font-medium uppercase tracking-wider text-mute">upcoming</span></h3>
+                <span class="font-mono text-xs text-accent">:7860</span>
+              </div>
+              <p class="mt-1 text-sm text-mute">Stable Diffusion WebUI. Clone under <code
+                  class="font-mono text-fg">~/stable-diffusion-webui</code>.</p>
+            </div>
+          </div>
+          <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 --cmd 'cd ~/stable-diffusion-webui && python launch.py --listen --port __PORT__' --port 7860</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve small --time 04:00:00 --cmd 'cd ~/stable-diffusion-webui && python launch.py --listen --port __PORT__' --port 7860">Copy
+              command</button>
           </div>
         </article>
 
@@ -399,7 +765,8 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
 
       <h3 class="mt-16 font-display text-3xl font-extrabold sm:text-4xl">Handy variants</h3>
       <p class="mt-3 max-w-2xl text-sm text-mute">
-        Same services, different flags. <code class="font-mono text-fg">--port</code> is only the port on your machine; the job picks a free one on the node.
+        Same services, different flags. <code class="font-mono text-fg">--port</code> is only the port on your machine;
+        the job picks a free one on the node.
       </p>
 
       <div class="mt-8 grid gap-5 sm:grid-cols-2">
@@ -414,12 +781,17 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">vLLM + args</h3>
                 <span class="font-mono text-xs text-accent">:8000/v1</span>
               </div>
-              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">--args</code> is appended to <code class="font-mono text-fg">vllm serve</code> as typed.</p>
+              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">--args</code> is appended to <code
+                  class="font-mono text-fg">vllm serve</code> as typed.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args &quot;--reasoning-parser qwen3 --max-model-len 8192&quot;">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args "--reasoning-parser qwen3 --max-model-len 8192"</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve medium --time 02:00:00 vllm Qwen/Qwen3-8B --args &quot;--reasoning-parser qwen3 --max-model-len 8192&quot;">Copy
+              command</button>
           </div>
         </article>
 
@@ -433,12 +805,16 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">Open WebUI → Ollama</h3>
                 <span class="font-mono text-xs text-accent">:8080</span>
               </div>
-              <p class="mt-1 text-sm text-mute">From the ollama line: <code class="font-mono text-fg">http://NODE:PORT</code>.</p>
+              <p class="mt-1 text-sm text-mute">From the ollama line: <code
+                  class="font-mono text-fg">http://NODE:PORT</code>.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 04:00:00 openwebui http://ainode02:31337">Copy command</button>
           </div>
         </article>
 
@@ -456,8 +832,11 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter --push --booked</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve small --time 04:00:00 jupyter --push --booked">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve small --time 04:00:00 jupyter --push --booked</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve small --time 04:00:00 jupyter --push --booked">Copy command</button>
           </div>
         </article>
 
@@ -471,12 +850,17 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
                 <h3 class="text-lg font-extrabold">HTTP smoke test</h3>
                 <span class="font-mono text-xs text-accent">:8000</span>
               </div>
-              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">__PORT__</code> becomes the free port on the node.</p>
+              <p class="mt-1 text-sm text-mute"><code class="font-mono text-fg">__PORT__</code> becomes the free port on
+                the node.</p>
             </div>
           </div>
           <div class="mt-5 flex flex-col gap-3 border-t border-line bg-ink/40 px-5 py-4">
-            <pre class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000</pre>
-            <button type="button" class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent" data-copy="hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000">Copy command</button>
+            <pre
+              class="whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-xs leading-6 text-fg">hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000</pre>
+            <button type="button"
+              class="copy-btn self-start rounded-full border border-line px-4 py-2 font-mono text-xs text-mute hover:border-accent hover:text-accent"
+              data-copy="hpc serve cpu --time 00:30:00 --cmd 'python3 -m http.server __PORT__' --port 8000">Copy
+              command</button>
           </div>
         </article>
 
@@ -486,7 +870,8 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
     <!-- Classes -->
     <section id="classes" class="mx-auto max-w-6xl px-4 pb-24 sm:px-6">
       <h2 class="font-display text-4xl font-extrabold sm:text-6xl">Resource classes</h2>
-      <p class="mt-3 max-w-2xl font-extralight text-2xl text-fg/80">NVIDIA H200 GPUs exposed as MIG slices on the <code class="font-mono text-lg font-medium">aiq</code> partition.</p>
+      <p class="mt-3 max-w-2xl font-extralight text-2xl text-fg/80">NVIDIA H200 GPUs exposed as MIG slices on the <code
+          class="font-mono text-lg font-medium">aiq</code> partition.</p>
       <div class="mt-10 overflow-x-auto rounded-2xl border border-line">
         <table class="w-full min-w-[34rem] text-left text-sm">
           <thead class="bg-panel text-xs uppercase tracking-widest text-mute">
@@ -499,18 +884,50 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
             </tr>
           </thead>
           <tbody class="divide-y divide-line font-mono">
-            <tr><td class="px-5 py-4 font-bold text-accent">tiny</td><td class="px-5 py-4">1g.35gb</td><td class="px-5 py-4">~35 GB</td><td class="px-5 py-4">2</td><td class="px-5 py-4">32 GiB</td></tr>
-            <tr><td class="px-5 py-4 font-bold text-accent">small</td><td class="px-5 py-4">2g.35gb</td><td class="px-5 py-4">~35 GB</td><td class="px-5 py-4">3</td><td class="px-5 py-4">64 GiB</td></tr>
-            <tr><td class="px-5 py-4 font-bold text-accent">medium</td><td class="px-5 py-4">4g.71gb</td><td class="px-5 py-4">~71 GB</td><td class="px-5 py-4">6</td><td class="px-5 py-4">128 GiB</td></tr>
-            <tr><td class="px-5 py-4 font-bold text-accent">large</td><td class="px-5 py-4">7g.141gb</td><td class="px-5 py-4">~141 GB</td><td class="px-5 py-4">11</td><td class="px-5 py-4">240 GiB</td></tr>
-            <tr><td class="px-5 py-4 font-bold text-accent">cpu</td><td class="px-5 py-4 text-mute">none</td><td class="px-5 py-4 text-mute">none</td><td class="px-5 py-4">1</td><td class="px-5 py-4">16 GiB</td></tr>
+            <tr>
+              <td class="px-5 py-4 font-bold text-accent">tiny</td>
+              <td class="px-5 py-4">1g.35gb</td>
+              <td class="px-5 py-4">~35 GB</td>
+              <td class="px-5 py-4">2</td>
+              <td class="px-5 py-4">32 GiB</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-bold text-accent">small</td>
+              <td class="px-5 py-4">2g.35gb</td>
+              <td class="px-5 py-4">~35 GB</td>
+              <td class="px-5 py-4">3</td>
+              <td class="px-5 py-4">64 GiB</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-bold text-accent">medium</td>
+              <td class="px-5 py-4">4g.71gb</td>
+              <td class="px-5 py-4">~71 GB</td>
+              <td class="px-5 py-4">6</td>
+              <td class="px-5 py-4">128 GiB</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-bold text-accent">large</td>
+              <td class="px-5 py-4">7g.141gb</td>
+              <td class="px-5 py-4">~141 GB</td>
+              <td class="px-5 py-4">11</td>
+              <td class="px-5 py-4">240 GiB</td>
+            </tr>
+            <tr>
+              <td class="px-5 py-4 font-bold text-accent">cpu</td>
+              <td class="px-5 py-4 text-mute">none</td>
+              <td class="px-5 py-4 text-mute">none</td>
+              <td class="px-5 py-4">1</td>
+              <td class="px-5 py-4">16 GiB</td>
+            </tr>
           </tbody>
         </table>
       </div>
       <p class="mt-5 max-w-3xl text-sm text-mute">
-        Jobs run preemptible by default; with an active booking, <code class="font-mono text-fg">--booked</code> selects the protected QoS.
+        Jobs run preemptible by default; with an active booking, <code class="font-mono text-fg">--booked</code> selects
+        the protected QoS.
         Preemption can stop a job at any time, so write checkpoints. See the
-        <a class="text-accent underline underline-offset-4" href="https://github.com/paolaguarasci/hpc-unical#6-qos-bookings-and-preemption">README</a>
+        <a class="text-accent underline underline-offset-4"
+          href="https://github.com/paolaguarasci/hpc-unical#6-qos-bookings-and-preemption">README</a>
         for the details.
       </p>
     </section>
@@ -518,10 +935,12 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
   </main>
 
   <footer class="border-t border-line">
-    <div class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-mute sm:flex-row sm:items-center sm:justify-between sm:px-6">
+    <div
+      class="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-mute sm:flex-row sm:items-center sm:justify-between sm:px-6">
       <p>Unofficial tool, not affiliated with the University of Calabria. Released under the MIT License.</p>
       <p class="flex gap-5">
-        <a class="hover:text-accent" href="https://hpcgate.unical.it:8001/public/status/getting-started.html">Official cluster guide</a>
+        <a class="hover:text-accent" href="https://hpcgate.unical.it:8001/public/status/getting-started.html">Official
+          cluster guide</a>
         <a class="hover:text-accent" href="https://github.com/paolaguarasci/hpc-unical">Source</a>
       </p>
     </div>
@@ -551,4 +970,5 @@ ln -s "$PWD/bin/hpc" ~/.local/bin/hpc</pre>
   </script>
 
 </body>
+
 </html>
